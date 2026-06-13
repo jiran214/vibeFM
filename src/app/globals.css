@@ -1,0 +1,49 @@
+:root {
+  color-scheme: dark;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #080a08;
+  color: #f1f2e8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+main {
+  display: grid;
+  align-content: center;
+  min-height: 100vh;
+  width: min(720px, calc(100% - 48px));
+  margin: 0 auto;
+}
+
+.eyebrow {
+  color: #d9ff43;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(4rem, 14vw, 9rem);
+  line-height: 0.9;
+}
+
+p {
+  color: #a9aca2;
+}
+
+pre {
+  width: fit-content;
+  padding: 16px 20px;
+  border: 1px solid #35382f;
+  background: #11130f;
+  color: #d9ff43;
+  overflow-x: auto;
+}

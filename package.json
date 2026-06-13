@@ -1,0 +1,39 @@
+{
+  "name": "vibefm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vibefm": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build && npm run build:cli",
+    "build:cli": "tsc -p tsconfig.cli.json && chmod +x dist/cli/index.js",
+    "start": "next start",
+    "test": "tsx --test src/core/*.test.ts src/cli/*.test.ts",
+    "cli": "tsx src/cli/index.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.cli.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "dependencies": {
+    "@steipete/sweet-cookie": "^0.4.0",
+    "dotenv": "^17.4.2",
+    "next": "16.2.9",
+    "openai": "^6.42.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "overrides": {
+    "postcss": "8.5.10"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+.vibefm/
+coverage/
+*.log
+*.tsbuildinfo
+.DS_Store
+.env
+.cookie
+prompts/plan.system.md
+.playwright-cli/
+assets/
+logs/
