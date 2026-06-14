@@ -14,6 +14,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   getWorkspacePath,
+  getWorkspaceStatus,
 } from "../core/workspaces.js";
 import {
   importNeteasePlaylist,
@@ -292,6 +293,20 @@ export async function runCli(
       );
     }
 
+    if (command === "status") {
+      const { name } = parseStatusArgs(commandArgs);
+      const result = await getWorkspaceStatus(name, baseDirectory);
+      writeJson({
+        success: true,
+        data: {
+          action: "status",
+          workspace: result.workspace,
+          stages: result.stages,
+        },
+      });
+      return 0;
+    }
+
     if (command === "cookie") {
       const result = await fetchAndSaveCookie(baseDirectory);
       writeJson({
@@ -306,7 +321,7 @@ export async function runCli(
     }
 
     throw new CliUsageError(
-      "Usage: vibefm create <name> <prompt> | vibefm delete <name> [--force] | vibefm import <name> <netease-playlist-url> | vibefm cookie | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
+      "Usage: vibefm create <name> <prompt> | vibefm delete <name> [--force] | vibefm import <name> <netease-playlist-url> | vibefm status <name> | vibefm cookie | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
     );
   } catch (error) {
     writeJson(toCliFailure(error));
@@ -508,6 +523,13 @@ function parseCreateArgs(args: string[]): { name: string; prompt: string } {
     throw new CliUsageError("Usage: vibefm create <name> <prompt>");
   }
   return { name: args[0], prompt: args[1] };
+}
+
+function parseStatusArgs(args: string[]): { name: string } {
+  if (args.length !== 1) {
+    throw new CliUsageError("Usage: vibefm status <name>");
+  }
+  return { name: args[0] };
 }
 
 function parseDeleteArgs(args: string[]): { name: string; force: boolean } {

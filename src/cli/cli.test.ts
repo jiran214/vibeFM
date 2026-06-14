@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -586,4 +586,111 @@ test("generate render command preserves render error codes", async () => {
     code: "MISSING_RENDER_DEPENDENCY",
     message: "Required render dependency events.json does not exist.",
   });
+});
+
+test("status command shows all stages pending for a fresh workspace", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-cli-"));
+  await captureStdout(() =>
+    runCli(["create", "morning-show", "Morning radio"], baseDirectory),
+  );
+
+  const { result, output } = await captureStdout(() =>
+    runCli(["status", "morning-show"], baseDirectory),
+  );
+
+  assert.equal(result, 0);
+  const response = JSON.parse(output);
+  assert.equal(response.success, true);
+  assert.equal(response.data.action, "status");
+  assert.equal(response.data.workspace.name, "morning-show");
+  assert.deepEqual(response.data.stages, [
+    { stage: "playlist", status: "pending" },
+    { stage: "plan", status: "pending" },
+    { stage: "script", status: "pending" },
+    { stage: "events", status: "pending" },
+    { stage: "audio", status: "pending" },
+    { stage: "speech", status: "pending" },
+    { stage: "render", status: "pending" },
+  ]);
+});
+
+test("status command shows completed stages when files exist", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-cli-"));
+  await captureStdout(() =>
+    runCli(["create", "morning-show", "Morning radio"], baseDirectory),
+  );
+
+  const workspaceDir = path.join(baseDirectory, ".vibefm", "morning-show");
+  await writeFile(path.join(workspaceDir, "playlist.json"), "{}");
+  await writeFile(path.join(workspaceDir, "plan.json"), "{}");
+  await mkdir(path.join(workspaceDir, "audio"), { recursive: true });
+  await writeFile(path.join(workspaceDir, "audio", "manifest.json"), "{}");
+
+  const { result, output } = await captureStdout(() =>
+    runCli(["status", "morning-show"], baseDirectory),
+  );
+
+  assert.equal(result, 0);
+  assert.deepEqual(JSON.parse(output).data.stages, [
+    { stage: "playlist", status: "completed" },
+    { stage: "plan", status: "completed" },
+    { stage: "script", status: "pending" },
+    { stage: "events", status: "pending" },
+    { stage: "audio", status: "completed" },
+    { stage: "speech", status: "pending" },
+    { stage: "render", status: "pending" },
+  ]);
+});
+
+test("status command shows all completed when all artifacts exist", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-cli-"));
+  await captureStdout(() =>
+    runCli(["create", "morning-show", "Morning radio"], baseDirectory),
+  );
+
+  const workspaceDir = path.join(baseDirectory, ".vibefm", "morning-show");
+  await writeFile(path.join(workspaceDir, "playlist.json"), "{}");
+  await writeFile(path.join(workspaceDir, "plan.json"), "{}");
+  await writeFile(path.join(workspaceDir, "script.md"), "# Script");
+  await writeFile(path.join(workspaceDir, "events.json"), "[]");
+  await mkdir(path.join(workspaceDir, "audio"), { recursive: true });
+  await writeFile(path.join(workspaceDir, "audio", "manifest.json"), "{}");
+  await mkdir(path.join(workspaceDir, "speech"), { recursive: true });
+  await writeFile(path.join(workspaceDir, "speech", "manifest.json"), "{}");
+  await mkdir(path.join(workspaceDir, "output"), { recursive: true });
+  await writeFile(path.join(workspaceDir, "output", "program.mp3"), "");
+
+  const { result, output } = await captureStdout(() =>
+    runCli(["status", "morning-show"], baseDirectory),
+  );
+
+  assert.equal(result, 0);
+  assert.deepEqual(JSON.parse(output).data.stages, [
+    { stage: "playlist", status: "completed" },
+    { stage: "plan", status: "completed" },
+    { stage: "script", status: "completed" },
+    { stage: "events", status: "completed" },
+    { stage: "audio", status: "completed" },
+    { stage: "speech", status: "completed" },
+    { stage: "render", status: "completed" },
+  ]);
+});
+
+test("status command fails when workspace does not exist", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-cli-"));
+
+  const { result, output } = await captureStdout(() =>
+    runCli(["status", "nonexistent"], baseDirectory),
+  );
+
+  assert.equal(result, 1);
+  assert.equal(JSON.parse(output).error.code, "WORKSPACE_NOT_FOUND");
+});
+
+test("status command rejects invalid arguments", async () => {
+  for (const args of [["status"], ["status", "morning-show", "extra"]]) {
+    const { result, output } = await captureStdout(() => runCli(args));
+    assert.equal(result, 1);
+    assert.equal(JSON.parse(output).error.code, "INVALID_ARGUMENTS");
+  }
 });

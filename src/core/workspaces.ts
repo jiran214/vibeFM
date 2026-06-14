@@ -152,6 +152,48 @@ export async function getWorkspace(
   return { name, path: workspacePath };
 }
 
+export interface WorkspaceStageStatus {
+  stage: string;
+  status: "completed" | "pending";
+}
+
+export interface WorkspaceStatusResult {
+  workspace: Workspace;
+  stages: WorkspaceStageStatus[];
+}
+
+const STATUS_STAGES: { stage: string; file: string }[] = [
+  { stage: "playlist", file: "playlist.json" },
+  { stage: "plan", file: "plan.json" },
+  { stage: "script", file: "script.md" },
+  { stage: "events", file: "events.json" },
+  { stage: "audio", file: "audio/manifest.json" },
+  { stage: "speech", file: "speech/manifest.json" },
+  { stage: "render", file: "output/program.mp3" },
+];
+
+export async function getWorkspaceStatus(
+  name: string,
+  baseDirectory = process.cwd(),
+): Promise<WorkspaceStatusResult> {
+  const workspace = await getWorkspace(name, baseDirectory);
+  const stages: WorkspaceStageStatus[] = [];
+
+  for (const { stage, file } of STATUS_STAGES) {
+    const filePath = path.join(workspace.path, file);
+    let status: "completed" | "pending" = "pending";
+    try {
+      await lstat(filePath);
+      status = "completed";
+    } catch {
+      // file does not exist
+    }
+    stages.push({ stage, status });
+  }
+
+  return { workspace, stages };
+}
+
 export async function deleteWorkspace(
   name: string,
   baseDirectory = process.cwd(),

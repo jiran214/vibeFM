@@ -376,5 +376,16 @@ plan        completed
 script      completed
 audio       pending
 speech      pending
-render pending
+render      pending
 ```
+
+### 12. 一次性完成全部工作流
+
+```bash
+vibefm generate all <节目空间命名>
+```
+
+- 工作流的每一步骤的参数，也暴露在这条命令
+- 在终端有进度条输出，显示当前在哪一步骤，要美观好看
+- 当中断某一步骤，下次运行自动从中断点继续
+
