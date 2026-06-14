@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -75,6 +75,22 @@ async function writeCompleteDependencies(workspaceDirectory: string): Promise<vo
         ],
       }),
     ),
+    writeFile(
+      path.join(workspaceDirectory, "playlist.json"),
+      JSON.stringify({
+        version: 1,
+        playlist: {
+          tracks: [
+            {
+              id: 123,
+              name: "Test Song",
+              artists: [{ name: "Test Artist" }],
+              album: { name: "Test Album" },
+            },
+          ],
+        },
+      }),
+    ),
     writeFile(path.join(workspaceDirectory, "speech", "host-001.wav"), "host"),
     writeFile(path.join(workspaceDirectory, "audio", "123.wav"), "track"),
   ]);
@@ -114,7 +130,21 @@ describe("generateProgramRender", () => {
     });
 
     assert.equal(result.path, path.join(workspaceDirectory, "output", "program.mp3"));
+    assert.equal(result.subtitles, path.join(workspaceDirectory, "output", "program.srt"));
     assert.equal(await readFile(result.path, "utf8"), "rendered mp3");
+    assert.equal(
+      await readFile(result.subtitles, "utf8"),
+      [
+        "1",
+        "00:00:00,000 --> 00:00:02,000",
+        "Welcome.",
+        "",
+        "2",
+        "00:00:02,000 --> 00:00:12,000",
+        "播放《Test Song》中...",
+        "",
+      ].join("\n"),
+    );
     assert.equal(result.durationSeconds, 15.25);
     assert.equal(result.eventCount, 7);
     assert.ok(ffmpegArgs.includes("-stream_loop"));
@@ -134,6 +164,7 @@ describe("generateProgramRender", () => {
       version: 1,
       generatedAt: "2026-06-14T00:00:00.000Z",
       filePath: "program.mp3",
+      subtitlePath: "program.srt",
       durationSeconds: 15.25,
       eventCount: 7,
       inputCount: 4,
@@ -183,6 +214,22 @@ describe("generateProgramRender", () => {
     );
   });
 
+  it("rejects a missing playlist required for song subtitles", async () => {
+    const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
+    await writeCompleteDependencies(workspaceDirectory);
+    await rm(path.join(workspaceDirectory, "playlist.json"));
+
+    await assert.rejects(
+      generateProgramRender("test", baseDirectory, {
+        executeFfmpeg: async () => assert.fail("FFmpeg must not run"),
+      }),
+      (error: unknown) =>
+        error instanceof ProgramRenderError &&
+        error.code === "MISSING_RENDER_DEPENDENCY" &&
+        /playlist\.json/u.test(error.message),
+    );
+  });
+
   it("rejects a missing named BGM asset", async () => {
     const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
     await writeCompleteDependencies(workspaceDirectory);
@@ -208,7 +255,9 @@ describe("generateProgramRender", () => {
       mkdir(path.join(workspaceDirectory, "output"), { recursive: true }),
     ]);
     const outputPath = path.join(workspaceDirectory, "output", "program.mp3");
+    const subtitlesPath = path.join(workspaceDirectory, "output", "program.srt");
     await writeFile(outputPath, "old program");
+    await writeFile(subtitlesPath, "old subtitles");
 
     await assert.rejects(
       generateProgramRender("test", baseDirectory, {
@@ -223,6 +272,7 @@ describe("generateProgramRender", () => {
     );
 
     assert.equal(await readFile(outputPath, "utf8"), "old program");
+    assert.equal(await readFile(subtitlesPath, "utf8"), "old subtitles");
     await assert.rejects(access(`${outputPath}.tmp`));
   });
 });

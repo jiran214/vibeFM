@@ -6,7 +6,9 @@ import OpenAI from "openai";
 
 import { writeAiLog, type AiLogContext } from "./logger.js";
 
-const TTS_ENV_KEYS = ["MIMO_API_KEY"] as const;
+const TTS_ENV_KEYS = ["MIMO_API_KEY", "MIMO_BASE_URL", "MIMO_TTS_MODEL"] as const;
+const DEFAULT_TTS_MODEL: TtsModel = "mimo-v2.5-tts-voicedesign";
+const DEFAULT_BASE_URL = "https://api.xiaomimimo.com/v1";
 
 type TtsEnvironmentKey = (typeof TTS_ENV_KEYS)[number];
 
@@ -29,6 +31,8 @@ export class TtsRequestError extends Error {
 
 export interface TtsConfig {
   apiKey: string;
+  baseURL: string;
+  model: TtsModel;
 }
 
 export type TtsModel =
@@ -85,7 +89,8 @@ export async function loadTtsConfig(
     TTS_ENV_KEYS.map((key) => [key, process.env[key] ?? fileEnvironment[key]]),
   ) as Record<TtsEnvironmentKey, string | undefined>;
 
-  const missingKeys = TTS_ENV_KEYS.filter(
+  const requiredKeys = ["MIMO_API_KEY"] as const;
+  const missingKeys = requiredKeys.filter(
     (key) =>
       environment[key]?.trim().length === 0 || environment[key] === undefined,
   );
@@ -99,6 +104,8 @@ export async function loadTtsConfig(
 
   return {
     apiKey: environment.MIMO_API_KEY!.trim(),
+    baseURL: environment.MIMO_BASE_URL?.trim() || DEFAULT_BASE_URL,
+    model: (environment.MIMO_TTS_MODEL?.trim() || DEFAULT_TTS_MODEL) as TtsModel,
   };
 }
 
@@ -119,11 +126,20 @@ export async function synthesizeSpeech(
 
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://token-plan-cn.xiaomimimo.com/v1",
+    baseURL: config.baseURL,
   });
 
-  const model = options.model || "mimo-v2.5-tts";
+  const model = options.model || config.model;
   const format = options.audio?.format || "wav";
+  const isVoiceDesign = model === "mimo-v2.5-tts-voicedesign";
+
+  const audioConfig: Record<string, unknown> = {
+    format,
+    ...options.audio,
+  };
+  if (!isVoiceDesign) {
+    audioConfig.voice = voice;
+  }
 
   const messages: TtsMessage[] = [
     { role: "user", content: options.voiceDesignPrompt?.trim() ?? "" },
@@ -145,11 +161,7 @@ export async function synthesizeSpeech(
     const completion = await client.chat.completions.create({
       model,
       messages,
-      audio: {
-        format,
-        voice,
-        ...options.audio,
-      },
+      audio: audioConfig as any,
       stream: false,
     });
 
@@ -197,24 +209,30 @@ export async function synthesizeSpeechStream(
 
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://api.xiaomimimo.com/v1",
+    baseURL: config.baseURL,
   });
 
-  const model = options.model || "mimo-v2.5-tts";
+  const model = options.model || config.model;
 
   const messages: TtsMessage[] = [
     { role: "user", content: "" },
     { role: "assistant", content: text },
   ];
 
+  const isVoiceDesign = model === "mimo-v2.5-tts-voicedesign";
+  const audioConfig: Record<string, unknown> = {
+    format: "pcm16",
+    ...options.audio,
+  };
+
+  if (!isVoiceDesign) {
+    audioConfig.voice = voice;
+  }
+
   const stream = await client.chat.completions.create({
     model,
     messages,
-    audio: {
-      format: "pcm16",
-      voice,
-      ...options.audio,
-    },
+    audio: audioConfig as any,
     stream: true,
   });
 
@@ -244,7 +262,7 @@ export async function synthesizeWithVoiceClone(
 
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://api.xiaomimimo.com/v1",
+    baseURL: config.baseURL,
   });
 
   const voiceSample = await readFile(voiceSamplePath);
@@ -329,7 +347,7 @@ export async function designVoice(
 
   const client = new OpenAI({
     apiKey: config.apiKey,
-    baseURL: "https://api.xiaomimimo.com/v1",
+    baseURL: config.baseURL,
   });
 
   const messages: TtsMessage[] = [
@@ -340,7 +358,7 @@ export async function designVoice(
   const logContext: AiLogContext = {
     task: "tts-voicedesign",
     workspace: options.workspace ?? "unknown",
-    model: "mimo-v2.5-tts-voicedesign",
+    model: config.model,
   };
 
   const logMessages = messages.map((m) => ({
@@ -350,7 +368,7 @@ export async function designVoice(
 
   try {
     const completion = await client.chat.completions.create({
-      model: "mimo-v2.5-tts-voicedesign",
+      model: config.model,
       messages,
       audio: {
         format: "wav" as const,

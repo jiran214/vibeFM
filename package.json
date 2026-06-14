@@ -7,7 +7,7 @@
     "vibefm": "./dist/cli/index.js"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build && npm run build:cli",
     "build:cli": "tsc -p tsconfig.cli.json && chmod +x dist/cli/index.js",
     "start": "next start",

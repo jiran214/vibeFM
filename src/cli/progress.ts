@@ -8,6 +8,7 @@ export type CliNoticeWriter = (message: string) => unknown;
 
 const WORKFLOW_STAGE_LABELS: Record<WorkflowStage, string> = {
   plan: "节目策划",
+  detail: "歌曲信息",
   script: "节目文稿",
   events: "事件流",
   audio: "歌曲音频",

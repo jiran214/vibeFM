@@ -1,0 +1,92 @@
+:root {
+  color-scheme: dark;
+  --ink: #080907;
+  --panel: #10120f;
+  --panel-raised: #151712;
+  --paper: #e7e5d9;
+  --muted: #8d9085;
+  --acid: #d9ff43;
+  --acid-soft: rgba(217, 255, 67, 0.12);
+  --line: rgba(231, 229, 217, 0.16);
+  --line-strong: rgba(231, 229, 217, 0.32);
+  --serif: Georgia, "Times New Roman", "Songti SC", serif;
+  --sans: "Avenir Next", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --condensed: "Arial Narrow", "DIN Condensed", "PingFang SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #030403;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  color: var(--paper);
+  background:
+    radial-gradient(circle at 78% 5%, rgba(217, 255, 67, 0.08), transparent 25rem),
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    var(--ink);
+  background-size: auto, 72px 72px, 72px 72px, auto;
+  font-family: var(--sans);
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  content: "";
+  opacity: 0.11;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+  mix-blend-mode: soft-light;
+}
+
+button,
+input {
+  color: inherit;
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 4px;
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes signal {
+  70% { box-shadow: 0 0 0 0.55rem rgba(217, 255, 67, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(217, 255, 67, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

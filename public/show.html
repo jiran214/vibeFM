@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vibeFM · Now Playing</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      color: var(--paper);
+      background:
+        radial-gradient(circle at 77% 17%, rgba(217, 255, 67, 0.055), transparent 25%),
+        #030403;
+      font-family: var(--sans);
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .stage {
+      position: relative;
+      width: min(100vw, calc(100vh * 16 / 9));
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      isolation: isolate;
+      background:
+        linear-gradient(90deg, transparent 49.95%, rgba(255, 255, 255, 0.025) 50%, transparent 50.05%),
+        linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+        var(--ink);
+      background-size: 100% 100%, 4.7vw 4.7vw, 4.7vw 4.7vw, auto;
+    }
+
+    .stage::before {
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+      content: "";
+      opacity: 0.14;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+      mix-blend-mode: soft-light;
+    }
+
+    .stage::after {
+      position: absolute;
+      right: -11%;
+      bottom: -34%;
+      width: 50%;
+      aspect-ratio: 1;
+      border: 1px solid rgba(217, 255, 67, 0.09);
+      border-radius: 50%;
+      content: "";
+      box-shadow:
+        0 0 0 6.2vw rgba(217, 255, 67, 0.018),
+        0 0 0 12.4vw rgba(217, 255, 67, 0.012),
+        0 0 0 18.6vw rgba(217, 255, 67, 0.008);
+    }
+
+    .topbar {
+      position: absolute;
+      top: 4.2%;
+      right: 4.7%;
+      left: 4.7%;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 1.15%;
+      border-bottom: 1px solid var(--line);
+      animation: reveal 900ms 80ms both;
+    }
+
+    .brand,
+    .live-state,
+    .eyebrow,
+    .meta,
+    .time,
+    .side-note {
+      text-transform: uppercase;
+      letter-spacing: 0.18em;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.8vw;
+      font-family: var(--condensed);
+      font-size: clamp(8px, 0.78vw, 15px);
+      font-weight: 700;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 1.25vw;
+      min-width: 12px;
+      aspect-ratio: 1;
+      border: 1px solid var(--acid);
+      border-radius: 50%;
+    }
+
+    .brand-mark::after {
+      position: absolute;
+      inset: 31%;
+      border-radius: 50%;
+      background: var(--acid);
+      content: "";
+    }
+
+    .frequency {
+      color: var(--muted);
+      font-size: clamp(7px, 0.62vw, 12px);
+      font-weight: 500;
+    }
+
+    .live-state {
+      display: flex;
+      align-items: center;
+      gap: 0.65vw;
+      color: var(--acid);
+      font-size: clamp(7px, 0.65vw, 12px);
+      font-weight: 700;
+    }
+
+    .pulse {
+      width: 0.45vw;
+      min-width: 5px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: var(--acid);
+      box-shadow: 0 0 0 0 rgba(217, 255, 67, 0.35);
+      animation: signal 2s infinite;
+    }
+
+    .content {
+      position: absolute;
+      top: 14.6%;
+      right: 4.7%;
+      bottom: 7.3%;
+      left: 4.7%;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: 38.5% 1fr;
+      gap: 5.3%;
+    }
+
+    .program-visual {
+      position: relative;
+      align-self: start;
+      width: 100%;
+      aspect-ratio: 1;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--panel);
+      box-shadow: 0 2.2vw 5vw rgba(0, 0, 0, 0.36);
+      animation: coverIn 1000ms cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .program-visual img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.85) contrast(1.05);
+    }
+
+    .program-visual::after {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      content: "";
+    }
+
+    .panel {
+      position: relative;
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      padding-top: 1.5%;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.8vw;
+      margin: 0 0 2.2%;
+      color: var(--acid);
+      font-family: var(--condensed);
+      font-size: clamp(7px, 0.64vw, 12px);
+      font-weight: 800;
+      animation: reveal 700ms 350ms both;
+    }
+
+    .eyebrow::before {
+      width: 2.7vw;
+      height: 1px;
+      background: var(--acid);
+      content: "";
+    }
+
+    .show-title {
+      max-width: 90%;
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(28px, 4.25vw, 82px);
+      font-weight: 400;
+      line-height: 0.95;
+      letter-spacing: -0.055em;
+      animation: reveal 900ms 430ms both;
+    }
+
+    .show-title em {
+      color: var(--acid);
+      font-weight: 400;
+    }
+
+    .meta {
+      display: flex;
+      gap: 2.3vw;
+      margin-top: 3.2%;
+      color: var(--muted);
+      font-size: clamp(6px, 0.58vw, 11px);
+      font-weight: 600;
+      animation: reveal 700ms 540ms both;
+    }
+
+    .meta strong {
+      margin-left: 0.45vw;
+      color: var(--paper);
+      font-weight: 600;
+    }
+
+    .transcript {
+      position: relative;
+      display: grid;
+      align-content: center;
+      flex: 1;
+      min-height: 0;
+      margin-top: auto;
+      padding: 1.5% 0 1.5% 4.7%;
+      border-left: 1px solid var(--line);
+      animation: reveal 900ms 650ms both;
+    }
+
+    .lyric {
+      margin: 0;
+      font-family: var(--serif);
+      line-height: 1.48;
+    }
+
+    .lyric.previous {
+      color: rgba(231, 229, 217, 0.24);
+      font-size: clamp(9px, 0.93vw, 18px);
+    }
+
+    .lyric.current {
+      position: relative;
+      color: var(--paper);
+      font-size: clamp(16px, 1.65vw, 32px);
+      letter-spacing: -0.02em;
+    }
+
+    .lyric.current::before {
+      position: absolute;
+      top: 0.72em;
+      left: calc(-4.7% - 4px);
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--acid);
+      content: "";
+      box-shadow: 0 0 16px rgba(217, 255, 67, 0.55);
+    }
+
+    .lyric.next {
+      color: rgba(231, 229, 217, 0.4);
+      font-size: clamp(9px, 0.93vw, 18px);
+    }
+
+    .player {
+      margin-top: 3.8%;
+      animation: reveal 900ms 740ms both;
+    }
+
+    .track-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2vw;
+      margin-bottom: 2%;
+    }
+
+    .now-playing {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      font-family: var(--condensed);
+      font-size: clamp(12px, 1.24vw, 24px);
+      font-weight: 700;
+      letter-spacing: 0.015em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .now-playing span {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .time {
+      flex: none;
+      color: var(--muted);
+      font-family: var(--condensed);
+      font-size: clamp(7px, 0.65vw, 12px);
+    }
+
+    .time b {
+      color: var(--paper);
+      font-weight: 600;
+    }
+
+    .progress {
+      position: relative;
+      width: 100%;
+      height: 12px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .progress-track {
+      position: relative;
+      width: 100%;
+      height: 3px;
+      background: rgba(231, 229, 217, 0.18);
+      border-radius: 2px;
+    }
+
+    .progress-fill {
+      position: relative;
+      width: 0%;
+      height: 3px;
+      background: var(--acid);
+      transition: width 100ms linear;
+      border-radius: 2px;
+    }
+
+    .progress-fill::after {
+      position: absolute;
+      top: 50%;
+      right: 0;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--acid);
+      content: "";
+      transform: translate(50%, -50%);
+      box-shadow: 0 0 14px rgba(217, 255, 67, 0.45);
+      opacity: 0;
+      transition: opacity 150ms ease;
+    }
+
+    .progress:hover .progress-fill::after {
+      opacity: 1;
+    }
+
+    .progress:hover .progress-track {
+      height: 5px;
+    }
+
+    .transport {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 2vw;
+      margin-top: 3.4%;
+    }
+
+    .play-button {
+      display: grid;
+      width: 3.25vw;
+      min-width: 34px;
+      aspect-ratio: 1;
+      padding: 0;
+      place-items: center;
+      border: 1px solid rgba(217, 255, 67, 0.78);
+      border-radius: 50%;
+      background: transparent;
+    }
+
+    .play-icon {
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 6px 0 6px 10px;
+      border-color: transparent transparent transparent var(--acid);
+      margin-left: 2px;
+    }
+
+    .pause-icon {
+      display: flex;
+      gap: 4px;
+    }
+
+    .pause-icon::before,
+    .pause-icon::after {
+      width: 2px;
+      height: 12px;
+      background: var(--acid);
+      content: "";
+    }
+
+    .visualizer {
+      display: flex;
+      height: 2.55vw;
+      min-height: 25px;
+      align-items: center;
+      gap: clamp(2px, 0.22vw, 5px);
+      overflow: hidden;
+      opacity: 0.48;
+      mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent);
+    }
+
+    .bar {
+      width: 2px;
+      height: var(--h);
+      min-height: 2px;
+      border-radius: 4px;
+      background: linear-gradient(to top, rgba(217, 255, 67, 0.18), var(--acid));
+      transform-origin: center;
+      animation: wave var(--d) ease-in-out var(--delay) infinite alternate;
+    }
+
+    .side-note {
+      color: var(--muted);
+      font-size: clamp(6px, 0.54vw, 10px);
+      text-align: right;
+      line-height: 1.7;
+    }
+
+    .corner-code {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      color: rgba(231, 229, 217, 0.23);
+      font-family: monospace;
+      font-size: clamp(6px, 0.5vw, 10px);
+      letter-spacing: 0.12em;
+    }
+
+    @keyframes wave {
+      0% { transform: scaleY(0.34); opacity: 0.38; }
+      45% { transform: scaleY(1); opacity: 0.92; }
+      100% { transform: scaleY(0.58); opacity: 0.58; }
+    }
+
+    @keyframes coverIn {
+      from { opacity: 0; transform: translateY(3%) scale(0.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes reveal {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage" aria-label="音乐电台正在播放界面">
+    <header class="topbar">
+      <a class="brand" href="/index.html" aria-label="返回首页">
+        <span class="brand-mark" aria-hidden="true"></span>
+        vibeFM <span class="frequency">FM 88.3 / Shanghai</span>
+      </a>
+      <div class="live-state"><span class="pulse" aria-hidden="true"></span><span id="live-time">On Air</span></div>
+    </header>
+
+    <section class="content">
+      <article class="program-visual" aria-label="节目主题视觉">
+        <img id="cover-image" src="" alt="节目封面" />
+      </article>
+
+      <section class="panel">
+        <p class="eyebrow">Now Playing</p>
+        <h2 class="show-title" id="show-title">Loading...</h2>
+        <div class="meta" id="meta">
+          <span>Host<strong>AI</strong></span>
+          <span>Tracks<strong id="track-count">0</strong></span>
+        </div>
+
+        <div class="transcript" aria-label="同步字幕">
+          <p class="lyric previous" id="lyric-prev"></p>
+          <p class="lyric current" id="lyric-current">等待播放...</p>
+          <p class="lyric next" id="lyric-next"></p>
+        </div>
+
+        <div class="player">
+          <div class="track-row">
+            <p class="now-playing" id="now-playing">Loading <span>...</span></p>
+            <span class="time"><b id="current-time">00:00</b>&nbsp;&nbsp;/&nbsp;&nbsp;<span id="duration">00:00</span></span>
+          </div>
+          <div class="progress" id="progress-bar" aria-label="播放进度">
+            <div class="progress-track">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+
+          <div class="transport">
+            <button class="play-button" type="button" aria-label="播放" id="play-button">
+              <span class="play-icon" id="play-icon" aria-hidden="true"></span>
+            </button>
+
+            <div class="visualizer" aria-label="音频声波可视化">
+              <i class="bar" style="--h:22%;--d:1.12s;--delay:-.3s"></i>
+              <i class="bar" style="--h:46%;--d:.86s;--delay:-.7s"></i>
+              <i class="bar" style="--h:72%;--d:1.26s;--delay:-.2s"></i>
+              <i class="bar" style="--h:38%;--d:.94s;--delay:-.8s"></i>
+              <i class="bar" style="--h:84%;--d:1.18s;--delay:-.5s"></i>
+              <i class="bar" style="--h:58%;--d:.78s;--delay:-.1s"></i>
+              <i class="bar" style="--h:31%;--d:1.34s;--delay:-.9s"></i>
+              <i class="bar" style="--h:68%;--d:.98s;--delay:-.4s"></i>
+              <i class="bar" style="--h:92%;--d:1.22s;--delay:-.6s"></i>
+              <i class="bar" style="--h:44%;--d:.82s;--delay:-.2s"></i>
+              <i class="bar" style="--h:76%;--d:1.3s;--delay:-1s"></i>
+              <i class="bar" style="--h:52%;--d:1.02s;--delay:-.5s"></i>
+              <i class="bar" style="--h:28%;--d:.9s;--delay:-.3s"></i>
+              <i class="bar" style="--h:64%;--d:1.16s;--delay:-.7s"></i>
+              <i class="bar" style="--h:81%;--d:.88s;--delay:-.1s"></i>
+              <i class="bar" style="--h:48%;--d:1.28s;--delay:-.8s"></i>
+              <i class="bar" style="--h:70%;--d:1s;--delay:-.4s"></i>
+              <i class="bar" style="--h:36%;--d:.8s;--delay:-.6s"></i>
+              <i class="bar" style="--h:59%;--d:1.14s;--delay:-.2s"></i>
+              <i class="bar" style="--h:25%;--d:.92s;--delay:-.9s"></i>
+              <i class="bar" style="--h:53%;--d:1.24s;--delay:-.4s"></i>
+              <i class="bar" style="--h:39%;--d:.84s;--delay:-.7s"></i>
+              <i class="bar" style="--h:67%;--d:1.08s;--delay:-.1s"></i>
+              <i class="bar" style="--h:30%;--d:1.2s;--delay:-.5s"></i>
+            </div>
+
+            <div class="side-note">Stereo / 320 kbps<br>Signal 96%</div>
+          </div>
+        </div>
+
+        <div class="corner-code" id="corner-code">vibeFM / 2026</div>
+      </section>
+    </section>
+  </main>
+
+  <audio id="audio-player" preload="auto"></audio>
+
+  <script type="module">
+    import { getWorkspaceDetail, getWorkspaceFileUrl } from '/js/api.js';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const showName = urlParams.get('name');
+
+    if (!showName) {
+      window.location.href = '/index.html';
+    }
+
+    const audioPlayer = document.getElementById('audio-player');
+    const playButton = document.getElementById('play-button');
+    const playIcon = document.getElementById('play-icon');
+    const progressBar = document.getElementById('progress-bar');
+    const progressFill = document.getElementById('progress-fill');
+    const currentTimeEl = document.getElementById('current-time');
+    const durationEl = document.getElementById('duration');
+    const nowPlaying = document.getElementById('now-playing');
+    const showTitle = document.getElementById('show-title');
+    const coverImage = document.getElementById('cover-image');
+    const trackCount = document.getElementById('track-count');
+    const lyricPrev = document.getElementById('lyric-prev');
+    const lyricCurrent = document.getElementById('lyric-current');
+    const lyricNext = document.getElementById('lyric-next');
+    const liveTime = document.getElementById('live-time');
+
+    let cues = [];
+    let isPlaying = false;
+
+    // Format time as MM:SS
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    // Parse SRT format
+    function parseSrt(text) {
+      const lines = text.trim().split('\n');
+      const cues = [];
+      let i = 0;
+
+      while (i < lines.length) {
+        // Skip empty lines
+        if (!lines[i].trim()) {
+          i++;
+          continue;
+        }
+
+        // Parse index
+        const index = parseInt(lines[i], 10);
+        if (isNaN(index)) {
+          i++;
+          continue;
+        }
+        i++;
+
+        // Parse timestamps
+        if (i >= lines.length) break;
+        const timeMatch = lines[i].match(
+          /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/
+        );
+        if (!timeMatch) {
+          i++;
+          continue;
+        }
+
+        const start =
+          parseInt(timeMatch[1]) * 3600 +
+          parseInt(timeMatch[2]) * 60 +
+          parseInt(timeMatch[3]) +
+          parseInt(timeMatch[4]) / 1000;
+        const end =
+          parseInt(timeMatch[5]) * 3600 +
+          parseInt(timeMatch[6]) * 60 +
+          parseInt(timeMatch[7]) +
+          parseInt(timeMatch[8]) / 1000;
+        i++;
+
+        // Parse text
+        const textLines = [];
+        while (i < lines.length && lines[i].trim()) {
+          textLines.push(lines[i].trim());
+          i++;
+        }
+
+        cues.push({
+          index,
+          start,
+          end,
+          text: textLines.join(' '),
+        });
+      }
+
+      return cues;
+    }
+
+    // Sync subtitles
+    function syncSubtitles(currentTime) {
+      if (cues.length === 0) return;
+
+      let currentIndex = -1;
+      for (let i = 0; i < cues.length; i++) {
+        if (currentTime >= cues[i].start && currentTime <= cues[i].end) {
+          currentIndex = i;
+          break;
+        }
+      }
+
+      if (currentIndex === -1) {
+        // Find nearest upcoming cue
+        for (let i = 0; i < cues.length; i++) {
+          if (currentTime < cues[i].start) {
+            currentIndex = i;
+            break;
+          }
+        }
+      }
+
+      if (currentIndex >= 0) {
+        lyricPrev.textContent = currentIndex > 0 ? cues[currentIndex - 1].text : '';
+        lyricCurrent.textContent = cues[currentIndex].text;
+        lyricNext.textContent = currentIndex < cues.length - 1 ? cues[currentIndex + 1].text : '';
+      }
+    }
+
+    // Load show details
+    async function loadShow() {
+      try {
+        const detail = await getWorkspaceDetail(showName);
+
+        // Update UI
+        showTitle.innerHTML = detail.title || detail.name;
+        trackCount.textContent = detail.tracks?.length || 0;
+
+        // Set cover image
+        if (detail.playlistImageUrl) {
+          coverImage.src = detail.playlistImageUrl;
+          coverImage.alt = detail.title || detail.name;
+        } else {
+          coverImage.src = 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=84';
+          coverImage.alt = '默认封面';
+        }
+
+        if (detail.tracks && detail.tracks.length > 0) {
+          const firstTrack = detail.tracks[0];
+          nowPlaying.innerHTML = `${firstTrack.name} <span>— ${firstTrack.artists?.join(', ') || 'Unknown'}</span>`;
+        }
+
+        // Load audio
+        if (detail.hasOutput) {
+          const audioUrl = getWorkspaceFileUrl(showName, 'output', 'program.mp3');
+          audioPlayer.src = audioUrl;
+
+          // Load subtitles
+          try {
+            const srtUrl = getWorkspaceFileUrl(showName, 'output', 'program.srt');
+            const srtResponse = await fetch(srtUrl);
+            if (srtResponse.ok) {
+              const srtText = await srtResponse.text();
+              cues = parseSrt(srtText);
+            }
+          } catch (e) {
+            console.warn('Failed to load subtitles:', e);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load show:', error);
+        showTitle.innerHTML = 'Error loading show';
+      }
+    }
+
+    // Play/Pause
+    playButton.addEventListener('click', () => {
+      if (isPlaying) {
+        audioPlayer.pause();
+      } else {
+        audioPlayer.play();
+      }
+    });
+
+    audioPlayer.addEventListener('play', () => {
+      isPlaying = true;
+      playIcon.className = 'pause-icon';
+      playButton.setAttribute('aria-label', '暂停');
+    });
+
+    audioPlayer.addEventListener('pause', () => {
+      isPlaying = false;
+      playIcon.className = 'play-icon';
+      playButton.setAttribute('aria-label', '播放');
+    });
+
+    // Time update
+    audioPlayer.addEventListener('timeupdate', () => {
+      const { currentTime, duration } = audioPlayer;
+      if (!duration) return;
+
+      const progress = (currentTime / duration) * 100;
+      progressFill.style.width = `${progress}%`;
+      currentTimeEl.textContent = formatTime(currentTime);
+      syncSubtitles(currentTime);
+    });
+
+    audioPlayer.addEventListener('loadedmetadata', () => {
+      durationEl.textContent = formatTime(audioPlayer.duration);
+    });
+
+    // Progress bar click
+    progressBar.addEventListener('click', (e) => {
+      const rect = progressBar.getBoundingClientRect();
+      const percent = (e.clientX - rect.left) / rect.width;
+      audioPlayer.currentTime = percent * audioPlayer.duration;
+    });
+
+    // Update live time
+    function updateLiveTime() {
+      if (isPlaying) {
+        const mins = Math.floor(audioPlayer.currentTime / 60);
+        const secs = Math.floor(audioPlayer.currentTime % 60);
+        liveTime.textContent = `On Air · ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      }
+      requestAnimationFrame(updateLiveTime);
+    }
+
+    // Initialize
+    loadShow();
+    updateLiveTime();
+  </script>
+</body>
+</html>

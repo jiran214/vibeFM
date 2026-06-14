@@ -168,44 +168,33 @@ export async function generateSpeech(
   await mkdir(speechDir, { recursive: true });
   const voice = options.voice ?? "冰糖";
   const synthesize = options.synthesizeSpeech ?? defaultSynthesizeSpeech;
-  const warnings: string[] = [];
-  let synthesizedCount = 0;
-  let placeholderCount = 0;
   const manifestSegments: ManifestSegment[] = [];
 
   for (const segment of segments) {
     const wavPath = path.join(speechDir, segment.fileName);
-    let status: ManifestSegment["status"] = "synthesized";
-    let errorMessage: string | undefined;
 
     if (options.force || !(await fileExists(wavPath))) {
-      try {
-        const result = await synthesize(segment.text, voice, {
-          baseDirectory,
-          voiceDesignPrompt: segment.voiceDesignPrompt,
-          workspace: workspaceName,
-        });
-        await writeWavAtomically(wavPath, decodeAudioData(result.audioData));
-      } catch (error) {
-        status = "placeholder";
-        errorMessage = error instanceof Error ? error.message : "Unknown error";
-        warnings.push(
-          `Failed to synthesize host event ${segment.id}: ${errorMessage}`,
+      const result = await synthesize(segment.text, voice, {
+        baseDirectory,
+        voiceDesignPrompt: segment.voiceDesignPrompt,
+        workspace: workspaceName,
+      }).catch((error) => {
+        throw new SpeechGenerationError(
+          "TTS_SYNTHESIS_FAILED",
+          `Failed to synthesize host event ${segment.id}: ${error instanceof Error ? error.message : "Unknown error"}`,
+          { cause: error },
         );
-        await writeWavAtomically(wavPath, createSilentWav());
-      }
+      });
+      await writeWavAtomically(wavPath, decodeAudioData(result.audioData));
     }
 
-    if (status === "synthesized") synthesizedCount += 1;
-    else placeholderCount += 1;
     manifestSegments.push({
       index: segment.index,
       id: segment.id,
       text: segment.text,
       voiceDesignPrompt: segment.voiceDesignPrompt,
-      status,
+      status: "synthesized",
       filePath: segment.fileName,
-      ...(errorMessage === undefined ? {} : { error: errorMessage }),
     });
     events[segment.eventIndex].source = `/${SPEECH_DIR}/${segment.fileName}`;
   }
@@ -225,9 +214,9 @@ export async function generateSpeech(
     directory: speechDir,
     manifest: manifestPath,
     segmentCount: segments.length,
-    synthesizedCount,
-    placeholderCount,
-    warnings,
+    synthesizedCount: segments.length,
+    placeholderCount: 0,
+    warnings: [],
   };
 }
 

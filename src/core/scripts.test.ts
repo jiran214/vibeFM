@@ -59,9 +59,8 @@ async function createFixture() {
     path.join(baseDirectory, "prompts", "script.user.md"),
     [
       "Write the show.",
-      "INFO={{info_json}}",
-      "PLAN={{plan_json}}",
-      "TRACKS={{tracks_json}}",
+      "PROMPT={{prompt}}",
+      "TRACKS={{tracks_info}}",
       "DSL={{dsl_markdown}}",
     ].join("\n"),
   );
@@ -124,8 +123,8 @@ test("generateProgramScript writes the validated RadioScript DSL to script.md", 
   assert.equal(requests.length, 1);
   assert.equal(requests[0][0].content, "You are a radio script writer.");
   const userPrompt = String(requests[0][1].content);
-  assert.match(userPrompt, /"language":"zh-CN"/u);
-  assert.match(userPrompt, /"title":"Second Song"/u);
+  assert.match(userPrompt, /适合深夜独处、情绪逐渐平静的节目/u);
+  assert.match(userPrompt, /Second Song/u);
   assert.match(userPrompt, /Use <host> and <audio \/> tags/u);
 
   const scriptText = await readFile(result.path, "utf8");

@@ -14,10 +14,14 @@ import {
   createWorkspace,
   deleteWorkspace,
   getWorkspacePath,
+  getWorkspaceShowDetail,
   getWorkspaceStatus,
+  listWorkspaces,
+  readWorkspaceInfo,
 } from "../core/workspaces.js";
 import {
   importNeteasePlaylist,
+  searchNeteasePlaylist,
   type PlaylistImportResult,
 } from "../core/playlists.js";
 import {
@@ -29,6 +33,10 @@ import {
   type ProgramRenderResult,
 } from "../core/render.js";
 import {
+  generateDetail,
+  type DetailResult,
+} from "../core/detail.js";
+import {
   generateProgramScript,
   type ProgramScriptResult,
 } from "../core/scripts.js";
@@ -38,6 +46,12 @@ import {
   type GenerateSpeechOptions,
 } from "../core/speech.js";
 import type { TtsVoice } from "../core/tts.js";
+import {
+  testNeteaseCookie,
+  testAiConfig,
+  type CookieTestResult,
+  type AiTestResult,
+} from "../core/test.js";
 import {
   generateProgramWorkflow,
   type GenerateWorkflowOptions,
@@ -50,16 +64,31 @@ import {
 } from "./progress.js";
 
 interface CliDependencies {
+  testNeteaseCookie?: (
+    baseDirectory: string,
+  ) => Promise<CookieTestResult>;
+  testAiConfig?: (
+    baseDirectory: string,
+  ) => Promise<AiTestResult>;
   importPlaylist?: (
     workspaceName: string,
     playlistUrl: string,
     baseDirectory: string,
   ) => Promise<PlaylistImportResult>;
+  searchPlaylist?: (
+    query: string,
+    baseDirectory: string,
+  ) => Promise<string>;
   generatePlan?: (
     workspaceName: string,
     count: number,
     baseDirectory: string,
   ) => Promise<ProgramPlanResult>;
+  generateDetail?: (
+    workspaceName: string,
+    baseDirectory: string,
+    options: { limit?: number },
+  ) => Promise<DetailResult>;
   generateScript?: (
     workspaceName: string,
     baseDirectory: string,
@@ -98,14 +127,50 @@ export async function runCli(
     const [command, ...commandArgs] = args;
 
     if (command === "create") {
-      const { name, prompt } = parseCreateArgs(commandArgs);
+      const { name, prompt, playlistUrl, playlistQuery } =
+        parseCreateArgs(commandArgs);
       const created = await createWorkspace(name, prompt, baseDirectory);
+
+      let playlistResult: PlaylistImportResult | undefined;
+      if (playlistUrl || playlistQuery) {
+        try {
+          const importPlaylist =
+            dependencies.importPlaylist ?? importNeteasePlaylist;
+          let resolvedUrl = playlistUrl;
+          if (playlistQuery) {
+            const searchPlaylist =
+              dependencies.searchPlaylist ?? searchNeteasePlaylist;
+            const searchResult = await searchPlaylist(
+              playlistQuery,
+              baseDirectory,
+            );
+            resolvedUrl = `https://music.163.com/playlist?id=${searchResult.playlistId}`;
+          }
+          playlistResult = await importPlaylist(name, resolvedUrl!, baseDirectory);
+        } catch (error) {
+          await deleteWorkspace(name, baseDirectory);
+          throw error;
+        }
+      }
+
+      const info = playlistResult
+        ? await readWorkspaceInfo(name, baseDirectory)
+        : created.info;
+
       writeJson({
         success: true,
         data: {
           action: "create",
           workspace: { name: created.name, path: created.path },
-          info: created.info,
+          info,
+          ...(playlistResult && {
+            playlist: {
+              id: playlistResult.playlistId,
+              name: playlistResult.playlistName,
+              trackCount: playlistResult.trackCount,
+              path: playlistResult.path,
+            },
+          }),
         },
       });
       return 0;
@@ -137,35 +202,15 @@ export async function runCli(
       return 0;
     }
 
-    if (command === "import") {
-      const { name, url } = parseImportArgs(commandArgs);
-      const importPlaylist =
-        dependencies.importPlaylist ?? importNeteasePlaylist;
-      const result = await importPlaylist(name, url, baseDirectory);
-      writeJson({
-        success: true,
-        data: {
-          action: "import",
-          workspace: result.workspace,
-          playlist: {
-            id: result.playlistId,
-            name: result.playlistName,
-            trackCount: result.trackCount,
-            path: result.path,
-          },
-        },
-      });
-      return 0;
-    }
-
     if (command === "generate") {
       if (commandArgs[0] === "all") {
-        const { name, count, quality, voice, force } =
+        const { name, count, commentLimit, quality, voice, force } =
           parseGenerateAllArgs(commandArgs);
         const generateAll =
           dependencies.generateAll ?? generateProgramWorkflow;
         const result = await generateAll(name, baseDirectory, {
           count,
+          commentLimit,
           quality,
           voice,
           force,
@@ -202,6 +247,28 @@ export async function runCli(
               path: result.path,
               trackCount: result.trackCount,
               think: result.think,
+            },
+          },
+        });
+        return 0;
+      }
+
+      if (commandArgs[0] === "detail") {
+        const { name, limit } = parseGenerateDetailArgs(commandArgs);
+        const generateDetailFn = dependencies.generateDetail ?? generateDetail;
+        const result = await runWithBlockingNotice(
+          "正在搜索歌词和评论，请稍候...",
+          () => generateDetailFn(name, baseDirectory, { limit }),
+        );
+        writeJson({
+          success: true,
+          data: {
+            action: "generate-detail",
+            workspace: result.workspace,
+            detail: {
+              trackCount: result.trackCount,
+              lyricsCount: result.lyricsCount,
+              commentsCount: result.commentsCount,
             },
           },
         });
@@ -318,6 +385,7 @@ export async function runCli(
             workspace: result.workspace,
             render: {
               path: result.path,
+              subtitles: result.subtitles,
               manifest: result.manifest,
               durationSeconds: result.durationSeconds,
               eventCount: result.eventCount,
@@ -329,8 +397,28 @@ export async function runCli(
       }
 
       throw new CliUsageError(
-        "Usage: vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
+        "Usage: vibefm generate all <name> [--count <number>] [--commentLimit <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate detail <name> [--limit <number>] | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
       );
+    }
+
+    if (command === "show") {
+      const parsed = parseShowArgs(commandArgs);
+
+      if (parsed.mode === "list") {
+        const items = await listWorkspaces(baseDirectory);
+        writeJson({
+          success: true,
+          data: { action: "show-list", items },
+        });
+        return 0;
+      }
+
+      const detail = await getWorkspaceShowDetail(parsed.name, baseDirectory);
+      writeJson({
+        success: true,
+        data: { action: "show", ...detail },
+      });
+      return 0;
     }
 
     if (command === "status") {
@@ -360,8 +448,54 @@ export async function runCli(
       return 0;
     }
 
+    if (command === "test") {
+      const testCookie =
+        dependencies.testNeteaseCookie ?? testNeteaseCookie;
+      const testAi = dependencies.testAiConfig ?? testAiConfig;
+
+      const errors: string[] = [];
+      let cookieResult: CookieTestResult | null = null;
+      let aiResult: AiTestResult | null = null;
+
+      try {
+        cookieResult = await runWithBlockingNotice(
+          "正在检测网易云 cookie...",
+          () => testCookie(baseDirectory),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        errors.push(message);
+      }
+
+      try {
+        aiResult = await runWithBlockingNotice(
+          "正在检测 AI 模型配置...",
+          () => testAi(baseDirectory),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        errors.push(message);
+      }
+
+      const msg = formatTestMessage(cookieResult, aiResult, errors);
+
+      writeJson({
+        success: true,
+        data: {
+          action: "test",
+          cookie: cookieResult,
+          ai: aiResult,
+          errors,
+          msg,
+        },
+      });
+      return errors.length === 0 ? 0 : 1;
+    }
+
     throw new CliUsageError(
-      "Usage: vibefm create <name> <prompt> | vibefm delete <name> [--force] | vibefm import <name> <netease-playlist-url> | vibefm status <name> | vibefm cookie | vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
+      "Usage: vibefm create <name> [prompt] [--playlist-url <url>] [--playlist-query <query>] | vibefm delete <name> [--force] | vibefm show list | vibefm show <name> | vibefm status <name> | vibefm cookie | vibefm test | vibefm generate all <name> [--count <number>] [--commentLimit <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate detail <name> [--limit <number>] | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
     );
   } catch (error) {
     writeJson(toCliFailure(error));
@@ -372,18 +506,20 @@ export async function runCli(
 function parseGenerateAllArgs(args: string[]): {
   name: string;
   count?: number;
+  commentLimit?: number;
   quality?: string;
   voice?: TtsVoice;
   force: boolean;
 } {
   const usage =
-    "Usage: vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force]";
+    "Usage: vibefm generate all <name> [--count <number>] [--commentLimit <number>] [--quality <level>] [--voice <voice>] [--force]";
   if (args[0] !== "all") {
     throw new CliUsageError(usage);
   }
 
   let name: string | undefined;
   let count: number | undefined;
+  let commentLimit: number | undefined;
   let quality: string | undefined;
   let voice: TtsVoice | undefined;
   let force = false;
@@ -402,6 +538,17 @@ function parseGenerateAllArgs(args: string[]): {
       }
       count = Number(value);
       if (!Number.isSafeInteger(count) || count <= 0) {
+        throw new CliUsageError(usage);
+      }
+      continue;
+    }
+    if (argument === "--commentLimit") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      commentLimit = Number(value);
+      if (!Number.isSafeInteger(commentLimit) || commentLimit <= 0) {
         throw new CliUsageError(usage);
       }
       continue;
@@ -445,7 +592,7 @@ function parseGenerateAllArgs(args: string[]): {
     throw new CliUsageError(usage);
   }
 
-  return { name, count, quality, voice, force };
+  return { name, count, commentLimit, quality, voice, force };
 }
 
 function parseGenerateScriptArgs(args: string[]): { name: string } {
@@ -627,21 +774,110 @@ function parseGeneratePlanArgs(args: string[]): {
   return { name: args[1], count };
 }
 
-function parseImportArgs(args: string[]): { name: string; url: string } {
-  if (args.length !== 2) {
+function parseGenerateDetailArgs(args: string[]): {
+  name: string;
+  limit: number;
+} {
+  const [subcommand, name, ...rest] = args;
+  if (subcommand !== "detail" || !name || name.startsWith("-")) {
     throw new CliUsageError(
-      "Usage: vibefm import <name> <netease-playlist-url>",
+      "Usage: vibefm generate detail <name> [--limit <number>]",
     );
   }
 
-  return { name: args[0], url: args[1] };
+  let limit = 10;
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--limit") {
+      if (i + 1 >= rest.length || !/^\d+$/u.test(rest[i + 1])) {
+        throw new CliUsageError(
+          "Usage: vibefm generate detail <name> [--limit <number>]",
+        );
+      }
+      limit = Number(rest[i + 1]);
+      if (!Number.isSafeInteger(limit) || limit <= 0) {
+        throw new CliUsageError(
+          "Usage: vibefm generate detail <name> [--limit <number>]",
+        );
+      }
+      i++;
+    } else {
+      throw new CliUsageError(
+        "Usage: vibefm generate detail <name> [--limit <number>]",
+      );
+    }
+  }
+
+  return { name, limit };
 }
 
-function parseCreateArgs(args: string[]): { name: string; prompt: string } {
-  if (args.length !== 2 || args[1].trim().length === 0) {
-    throw new CliUsageError("Usage: vibefm create <name> <prompt>");
+function parseCreateArgs(args: string[]): {
+  name: string;
+  prompt: string;
+  playlistUrl?: string;
+  playlistQuery?: string;
+} {
+  const usage =
+    "Usage: vibefm create <name> [prompt] [--playlist-url <url>] [--playlist-query <query>]";
+
+  let name: string | undefined;
+  let prompt: string | undefined;
+  let playlistUrl: string | undefined;
+  let playlistQuery: string | undefined;
+
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+
+    if (argument === "--playlist-url") {
+      const value = args[++index];
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliUsageError(usage);
+      }
+      playlistUrl = value;
+      continue;
+    }
+
+    if (argument === "--playlist-query") {
+      const value = args[++index];
+      if (value === undefined || value.startsWith("--")) {
+        throw new CliUsageError(usage);
+      }
+      playlistQuery = value;
+      continue;
+    }
+
+    if (argument.startsWith("--")) {
+      throw new CliUsageError(`Unknown option: ${argument}`);
+    }
+
+    if (name === undefined) {
+      name = argument;
+    } else if (prompt === undefined) {
+      prompt = argument;
+    } else {
+      throw new CliUsageError(usage);
+    }
   }
-  return { name: args[0], prompt: args[1] };
+
+  if (name === undefined) {
+    throw new CliUsageError(usage);
+  }
+
+  if (playlistUrl && playlistQuery) {
+    throw new CliUsageError(
+      "Cannot specify both --playlist-url and --playlist-query.",
+    );
+  }
+
+  if (!playlistUrl && !playlistQuery && (prompt === undefined || prompt.trim().length === 0)) {
+    throw new CliUsageError(usage);
+  }
+
+  return {
+    name,
+    prompt: prompt ?? "",
+    playlistUrl,
+    playlistQuery,
+  };
 }
 
 function parseStatusArgs(args: string[]): { name: string } {
@@ -649,6 +885,21 @@ function parseStatusArgs(args: string[]): { name: string } {
     throw new CliUsageError("Usage: vibefm status <name>");
   }
   return { name: args[0] };
+}
+
+function parseShowArgs(
+  args: string[],
+): { mode: "list" } | { mode: "detail"; name: string } {
+  if (args.length === 0) {
+    throw new CliUsageError("Usage: vibefm show list | vibefm show <name>");
+  }
+  if (args[0] === "list") {
+    return { mode: "list" };
+  }
+  if (args.length !== 1) {
+    throw new CliUsageError("Usage: vibefm show <name>");
+  }
+  return { mode: "detail", name: args[0] };
 }
 
 function parseDeleteArgs(args: string[]): { name: string; force: boolean } {
@@ -690,4 +941,31 @@ async function confirmDeletion(name: string): Promise<boolean> {
   } finally {
     readline.close();
   }
+}
+
+function formatTestMessage(
+  cookie: CookieTestResult | null,
+  ai: AiTestResult | null,
+  errors: string[],
+): string {
+  const lines: string[] = [];
+
+  if (cookie) {
+    const { account } = cookie;
+    const vipLabel = account.isVip ? "会员" : "非会员";
+    lines.push(
+      `网易云 Cookie: 有效 | ${account.nickname ?? "未知用户"} (ID: ${account.userId ?? "N/A"}) | ${vipLabel}`,
+    );
+  } else {
+    lines.push(`网易云 Cookie: ${errors[0] ?? "检测失败"}`);
+  }
+
+  if (ai) {
+    lines.push(`AI 模型: 正常 | ${ai.model} | ${ai.baseUrl}`);
+  } else {
+    const aiError = errors.length > 1 ? errors[1] : errors[0] ?? "检测失败";
+    lines.push(`AI 模型: ${aiError}`);
+  }
+
+  return lines.join("\n");
 }

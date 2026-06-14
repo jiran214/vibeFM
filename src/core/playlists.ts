@@ -1,18 +1,27 @@
-import { rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getWorkspace, type Workspace } from "./workspaces.js";
+import { readCookie } from "./cookie.js";
+import {
+  getWorkspace,
+  updateWorkspacePrompt,
+  WORKSPACE_INFO_FILE,
+  type Workspace,
+} from "./workspaces.js";
 
 const NETEASE_PLAYLIST_API_URL =
   "https://music.163.com/api/v6/playlist/detail";
 const NETEASE_SONG_API_URL = "https://music.163.com/api/song/detail";
+const NETEASE_SEARCH_API_URL = "https://music.163.com/api/search/get";
 const REQUEST_TIMEOUT_MS = 15_000;
 const SONG_DETAIL_BATCH_SIZE = 100;
 
 export type PlaylistImportErrorCode =
   | "INVALID_PLAYLIST_URL"
   | "PLAYLIST_REQUEST_FAILED"
-  | "INVALID_PLAYLIST_RESPONSE";
+  | "INVALID_PLAYLIST_RESPONSE"
+  | "NO_SEARCH_RESULTS"
+  | "SEARCH_REQUEST_FAILED";
 
 export class PlaylistImportError extends Error {
   constructor(
@@ -35,10 +44,92 @@ export interface PlaylistImportResult {
 export interface PlaylistImportOptions {
   fetch?: typeof fetch;
   now?: () => Date;
+  cookie?: string;
 }
 
 interface JsonObject {
   [key: string]: unknown;
+}
+
+export interface NeteaseSearchResult {
+  playlistId: string;
+  playlistName: string;
+  trackCount: number;
+}
+
+export async function searchNeteasePlaylist(
+  query: string,
+  baseDirectory: string,
+  options: PlaylistImportOptions = {},
+): Promise<NeteaseSearchResult> {
+  const fetchImpl = options.fetch ?? fetch;
+  const cookie = options.cookie ?? (await readCookie(baseDirectory));
+
+  let response: Response;
+  try {
+    response = await fetchImpl(NETEASE_SEARCH_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: cookie,
+        Referer: "https://music.163.com/",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 vibeFM/0.1",
+      },
+      body: `s=${encodeURIComponent(query)}&type=1000&limit=1&offset=0`,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new PlaylistImportError(
+      "SEARCH_REQUEST_FAILED",
+      `Failed to search NetEase playlists: ${getErrorMessage(error)}`,
+    );
+  }
+
+  if (!response.ok) {
+    throw new PlaylistImportError(
+      "SEARCH_REQUEST_FAILED",
+      `NetEase search request failed with HTTP ${response.status}.`,
+    );
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new PlaylistImportError(
+      "INVALID_PLAYLIST_RESPONSE",
+      "NetEase returned an invalid JSON response.",
+    );
+  }
+
+  const result = asObject(payload);
+  const playlists = asArray(result?.playlists ?? result?.result?.playlists);
+
+  if (!playlists || playlists.length === 0) {
+    throw new PlaylistImportError(
+      "NO_SEARCH_RESULTS",
+      `No playlists found for query: "${query}"`,
+    );
+  }
+
+  const playlist = asObject(playlists[0]);
+  const playlistId = asId(playlist?.id);
+  const playlistName = asString(playlist?.name);
+  const trackCount = asNumber(playlist?.trackCount);
+
+  if (playlistId === undefined || playlistName === undefined) {
+    throw new PlaylistImportError(
+      "INVALID_PLAYLIST_RESPONSE",
+      "NetEase search returned an invalid playlist entry.",
+    );
+  }
+
+  return {
+    playlistId,
+    playlistName,
+    trackCount: trackCount ?? 0,
+  };
 }
 
 export async function importNeteasePlaylist(
@@ -63,6 +154,20 @@ export async function importNeteasePlaylist(
   );
   const artifactPath = path.join(workspace.path, "playlist.json");
   await writeJsonAtomically(artifactPath, artifact);
+
+  const infoPath = path.join(workspace.path, WORKSPACE_INFO_FILE);
+  try {
+    const info = JSON.parse(await readFile(infoPath, "utf8"));
+    if (!info.prompt && artifact.playlist.name) {
+      await updateWorkspacePrompt(
+        workspaceName,
+        `歌单《${artifact.playlist.name}》精选电台`,
+        baseDirectory,
+      );
+    }
+  } catch {
+    // info.json missing or unreadable — skip auto-fill
+  }
 
   return {
     workspace,

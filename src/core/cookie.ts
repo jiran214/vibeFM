@@ -29,21 +29,22 @@ export async function fetchAndSaveCookie(
   console.error("正在读取浏览器 cookie，如果弹出权限请求请点击允许...");
   const { cookies, warnings } = await getCookies({
     url: "https://music.163.com/",
-    browsers: ["edge"],
+    browsers: ["chrome", "edge", "firefox", "safari"],
     timeoutMs: 30_000,
   });
 
   for (const w of warnings) {
-    console.warn(w);
+    console.warn("Warning:", w);
   }
 
   if (cookies.length === 0) {
-    throw new Error("未找到网易云音乐的 cookie，请先在浏览器中登录 music.163.com");
+    throw new Error("未找到网易云音乐的cookie，请先在edge,chrome,firefox,safari浏览器中登录 music.163.com");
   }
 
   const cookieHeader = toCookieHeader(cookies, { dedupeByName: true });
   const cookiePath = path.resolve(baseDirectory, COOKIE_FILE);
   await writeFile(cookiePath, cookieHeader, "utf8");
+  console.error(`保存成功！`);
 
   return { cookiePath, cookieCount: cookies.length };
 }

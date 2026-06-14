@@ -35,7 +35,12 @@ voice_design_prompt: 温柔、低声、语速偏慢
 }
 
 test("parseRadioEvents converts RadioScript into an ordered event stream", () => {
-  assert.deepEqual(parseRadioEvents(completeScript()), [
+  const result = parseRadioEvents(completeScript());
+  assert.deepEqual(result.frontmatter, {
+    title: "城市夜行",
+    voiceDesignPrompt: "温柔、低声、语速偏慢",
+  });
+  assert.deepEqual(result.events, [
     {
       type: "audio",
       action: "start",
@@ -92,10 +97,29 @@ test("generateProgramEvents writes events.json atomically", async () => {
   assert.equal(result.eventCount, 8);
   assert.equal(result.hostCount, 2);
   assert.equal(result.playCount, 1);
+  assert.deepEqual(result.frontmatter, {
+    title: "城市夜行",
+    voiceDesignPrompt: "温柔、低声、语速偏慢",
+  });
   assert.deepEqual(
     JSON.parse(await readFile(result.path, "utf8")),
-    parseRadioEvents(completeScript()),
+    parseRadioEvents(completeScript()).events,
   );
+});
+
+test("generateProgramEvents merges frontmatter into info.json", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-events-"));
+  const workspace = await createWorkspace("night-radio", "深夜节目", baseDirectory);
+  await writeFile(path.join(workspace.path, "script.md"), completeScript());
+
+  await generateProgramEvents("night-radio", baseDirectory);
+
+  const info = JSON.parse(
+    await readFile(path.join(workspace.path, "info.json"), "utf8"),
+  );
+  assert.equal(info.prompt, "深夜节目");
+  assert.equal(info.title, "城市夜行");
+  assert.equal(info.voiceDesignPrompt, "温柔、低声、语速偏慢");
 });
 
 test("generateProgramEvents reports a missing script dependency", async () => {

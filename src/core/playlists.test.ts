@@ -7,6 +7,7 @@ import test from "node:test";
 import { createWorkspace } from "./workspaces.js";
 import {
   importNeteasePlaylist,
+  searchNeteasePlaylist,
   PlaylistImportError,
 } from "./playlists.js";
 
@@ -207,5 +208,67 @@ test("importNeteasePlaylist rejects malformed API responses", async () => {
     (error: unknown) =>
       error instanceof PlaylistImportError &&
       error.code === "INVALID_PLAYLIST_RESPONSE",
+  );
+});
+
+test("searchNeteasePlaylist returns first matching playlist", async () => {
+  const baseDirectory = await createTempDirectory();
+  const searchResponse = {
+    code: 200,
+    result: {
+      playlists: [
+        {
+          id: 123456789,
+          name: "Test Playlist",
+          trackCount: 10,
+          creator: { nickname: "Test User" },
+        },
+      ],
+    },
+  };
+
+  const result = await searchNeteasePlaylist("test query", baseDirectory, {
+    fetch: async () => Response.json(searchResponse),
+    cookie: "test_cookie",
+  });
+
+  assert.equal(result.playlistId, "123456789");
+  assert.equal(result.playlistName, "Test Playlist");
+  assert.equal(result.trackCount, 10);
+});
+
+test("searchNeteasePlaylist throws NO_SEARCH_RESULTS when no playlists found", async () => {
+  const baseDirectory = await createTempDirectory();
+  const searchResponse = {
+    code: 200,
+    result: {
+      playlists: [],
+    },
+  };
+
+  await assert.rejects(
+    searchNeteasePlaylist("nonexistent", baseDirectory, {
+      fetch: async () => Response.json(searchResponse),
+      cookie: "test_cookie",
+    }),
+    (error: unknown) =>
+      error instanceof PlaylistImportError &&
+      error.code === "NO_SEARCH_RESULTS",
+  );
+});
+
+test("searchNeteasePlaylist throws SEARCH_REQUEST_FAILED on network error", async () => {
+  const baseDirectory = await createTempDirectory();
+
+  await assert.rejects(
+    searchNeteasePlaylist("test", baseDirectory, {
+      fetch: async () => {
+        throw new Error("Network error");
+      },
+      cookie: "test_cookie",
+    }),
+    (error: unknown) =>
+      error instanceof PlaylistImportError &&
+      error.code === "SEARCH_REQUEST_FAILED",
   );
 });

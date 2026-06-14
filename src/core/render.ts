@@ -13,8 +13,10 @@ import type { RadioEvent } from "./events.js";
 import { getWorkspace, type Workspace } from "./workspaces.js";
 
 const EVENTS_FILE = "events.json";
+const PLAYLIST_FILE = "playlist.json";
 const OUTPUT_DIRECTORY = "output";
 const OUTPUT_FILE = "program.mp3";
+const SUBTITLE_FILE = "program.srt";
 const MANIFEST_FILE = "manifest.json";
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 2;
@@ -50,6 +52,7 @@ export class ProgramRenderError extends Error {
 export interface ProgramRenderResult {
   workspace: Workspace;
   path: string;
+  subtitles: string;
   manifest: string;
   durationSeconds: number;
   eventCount: number;
@@ -123,6 +126,12 @@ interface RenderGraph {
   inputCount: number;
 }
 
+interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
+}
+
 export async function generateProgramRender(
   workspaceName: string,
   baseDirectory = process.cwd(),
@@ -152,6 +161,18 @@ export async function generateProgramRender(
       .map((event) => trackIdFromSource(event.source))
       .filter((id): id is string => id !== undefined),
   );
+  const mainTrackIds = new Set(
+    events
+      .filter((event) => event.type === "audio" && event.role === "main")
+      .map((event) => trackIdFromSource(event.source))
+      .filter((id): id is string => id !== undefined),
+  );
+  const trackTitles = mainTrackIds.size === 0
+    ? new Map<string, string>()
+    : await readTrackTitles(
+        path.join(workspace.path, PLAYLIST_FILE),
+        mainTrackIds,
+      );
   const speechMedia = hostIds.size === 0
     ? new Map<string, string>()
     : await readMediaManifest(
@@ -174,10 +195,11 @@ export async function generateProgramRender(
   const probeDuration = options.probeDuration ?? defaultProbeDuration;
   const assetsDirectory =
     options.assetsDirectory ?? path.join(baseDirectory, "assets");
-  const { segments, bgmSpans } = await buildTimeline(
+  const { segments, bgmSpans, subtitleCues } = await buildTimeline(
     events,
     speechMedia,
     trackMedia,
+    trackTitles,
     workspace.path,
     assetsDirectory,
     (filePath) => probeDuration(filePath, options.ffprobePath ?? "ffprobe"),
@@ -190,6 +212,8 @@ export async function generateProgramRender(
   const filterGraphPath = path.join(outputDirectory, `.render.${nonce}.ffgraph`);
   const temporaryOutputPath = path.join(outputDirectory, `.program.${nonce}.tmp.mp3`);
   const outputPath = path.join(outputDirectory, OUTPUT_FILE);
+  const temporarySubtitlePath = path.join(outputDirectory, `.program.${nonce}.tmp.srt`);
+  const subtitlePath = path.join(outputDirectory, SUBTITLE_FILE);
   const manifestPath = path.join(outputDirectory, MANIFEST_FILE);
   const temporaryManifestPath = path.join(outputDirectory, `.manifest.${nonce}.tmp`);
 
@@ -231,6 +255,7 @@ export async function generateProgramRender(
       version: 1,
       generatedAt: (options.now ?? (() => new Date()))().toISOString(),
       filePath: OUTPUT_FILE,
+      subtitlePath: SUBTITLE_FILE,
       durationSeconds,
       eventCount: events.length,
       inputCount: graph.inputCount,
@@ -244,12 +269,18 @@ export async function generateProgramRender(
       encoding: "utf8",
       flag: "wx",
     });
+    await writeFile(temporarySubtitlePath, formatSubRip(subtitleCues), {
+      encoding: "utf8",
+      flag: "wx",
+    });
     await rename(temporaryOutputPath, outputPath);
+    await rename(temporarySubtitlePath, subtitlePath);
     await rename(temporaryManifestPath, manifestPath);
 
     return {
       workspace,
       path: outputPath,
+      subtitles: subtitlePath,
       manifest: manifestPath,
       durationSeconds,
       eventCount: events.length,
@@ -259,6 +290,7 @@ export async function generateProgramRender(
     await Promise.all([
       rm(filterGraphPath, { force: true }),
       rm(temporaryOutputPath, { force: true }),
+      rm(temporarySubtitlePath, { force: true }),
       rm(temporaryManifestPath, { force: true }),
     ]);
   }
@@ -268,17 +300,27 @@ async function buildTimeline(
   events: RadioEvent[],
   speechMedia: Map<string, string>,
   trackMedia: Map<string, string>,
+  trackTitles: Map<string, string>,
   workspaceDirectory: string,
   assetsDirectory: string,
   probeDuration: (filePath: string) => Promise<number>,
-): Promise<{ segments: TimelineSegment[]; bgmSpans: BgmSpan[] }> {
+): Promise<{
+  segments: TimelineSegment[];
+  bgmSpans: BgmSpan[];
+  subtitleCues: SubtitleCue[];
+}> {
   const segments: TimelineSegment[] = [];
   const bgmSpans: BgmSpan[] = [];
+  const subtitleCues: SubtitleCue[] = [];
   let duration = 0;
   let pendingCrossfade: number | undefined;
   let activeBgm: ActiveBgm | undefined;
 
-  const appendSegment = (segment: TimelineSegment): void => {
+  const appendSegment = (
+    segment: TimelineSegment,
+    subtitleText?: string,
+  ): void => {
+    let startAt = duration;
     if (pendingCrossfade !== undefined) {
       const previous = segments.at(-1);
       if (previous === undefined) {
@@ -286,12 +328,21 @@ async function buildTimeline(
       }
       const effectiveCrossfade = Math.min(pendingCrossfade, previous.duration, segment.duration);
       segment.crossfadeBefore = effectiveCrossfade;
+      startAt -= effectiveCrossfade;
       duration += segment.duration - effectiveCrossfade;
       pendingCrossfade = undefined;
     } else {
       duration += segment.duration;
     }
     segments.push(segment);
+    if (subtitleText !== undefined) {
+      appendSubtitleCue(
+        subtitleCues,
+        startAt,
+        startAt + segment.duration,
+        subtitleText,
+      );
+    }
   };
 
   const closeBgm = (fadeOut?: number): void => {
@@ -332,7 +383,7 @@ async function buildTimeline(
             type: "file",
             filePath,
             duration: hostDuration,
-          });
+          }, event.text);
           if (activeBgm !== undefined && event.duckTo !== undefined) {
             activeBgm.ducks.push({
               startAt: duration - hostDuration - activeBgm.startAt,
@@ -376,7 +427,8 @@ async function buildTimeline(
           break;
         }
 
-        const filePath = event.role === "main"
+        const isMain = event.role === "main";
+        const filePath = isMain
           ? requiredTrackSource(event.source, trackMedia)
           : await resolveEventSource(
               event.source,
@@ -386,8 +438,11 @@ async function buildTimeline(
             );
         const mediaDuration = await probeValidDuration(filePath, probeDuration);
         const start = event.start ?? 0;
-        const segmentDuration = event.duration ?? mediaDuration - start;
-        if (start >= mediaDuration || segmentDuration <= 0 || start + segmentDuration > mediaDuration) {
+        const segmentDuration = Math.min(
+          event.duration ?? mediaDuration - start,
+          mediaDuration - start,
+        );
+        if (start >= mediaDuration || segmentDuration <= 0) {
           throw invalidDependency(
             `Audio source ${event.source} has an invalid start or duration.`,
           );
@@ -400,7 +455,9 @@ async function buildTimeline(
           volume: event.volume,
           fadeIn: event.fadeIn,
           fadeOut: event.fadeOut,
-        }));
+        }), isMain
+          ? `播放《${requiredTrackTitle(event.source, trackTitles)}》中...`
+          : undefined);
         break;
       }
     }
@@ -416,7 +473,7 @@ async function buildTimeline(
     closeBgm();
   }
 
-  return { segments, bgmSpans };
+  return { segments, bgmSpans, subtitleCues };
 }
 
 function buildFilterGraph(
@@ -644,6 +701,61 @@ function validateEvent(
   }
 }
 
+async function readTrackTitles(
+  playlistPath: string,
+  requiredIds: Set<string>,
+): Promise<Map<string, string>> {
+  const text = await readRequiredFile(
+    playlistPath,
+    `Required render dependency ${PLAYLIST_FILE} does not exist.`,
+  );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw invalidDependency(`${PLAYLIST_FILE} is not valid JSON.`, error);
+  }
+  const tracks = asObject(asObject(parsed)?.playlist)?.tracks;
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    throw invalidDependency(
+      `${PLAYLIST_FILE} must contain a non-empty playlist.tracks array.`,
+    );
+  }
+
+  const titles = new Map<string, string>();
+  for (const [index, value] of tracks.entries()) {
+    const track = asObject(value);
+    const rawId = track?.id;
+    const id = typeof rawId === "string" && /^\d+$/u.test(rawId)
+      ? rawId
+      : typeof rawId === "number" && Number.isSafeInteger(rawId) && rawId >= 0
+        ? String(rawId)
+        : undefined;
+    if (id === undefined || !requiredIds.has(id)) {
+      continue;
+    }
+    if (titles.has(id)) {
+      throw invalidDependency(`${PLAYLIST_FILE} duplicates track id ${id}.`);
+    }
+    const title = nonEmptyString(track?.name);
+    if (title === undefined) {
+      throw invalidDependency(
+        `${PLAYLIST_FILE} has an invalid title for track ${id} at index ${index}.`,
+      );
+    }
+    titles.set(id, title);
+  }
+
+  for (const id of requiredIds) {
+    if (!titles.has(id)) {
+      throw invalidDependency(
+        `${PLAYLIST_FILE} does not contain a title for track ${id}.`,
+      );
+    }
+  }
+  return titles;
+}
+
 async function readMediaManifest(
   directory: string,
   collectionName: "segments" | "tracks",
@@ -735,6 +847,66 @@ function requiredTrackSource(
     );
   }
   return requiredMedia(trackMedia, id, "audio");
+}
+
+function requiredTrackTitle(
+  source: string,
+  trackTitles: Map<string, string>,
+): string {
+  const id = trackIdFromSource(source);
+  if (id === undefined) {
+    throw invalidDependency(
+      `Main audio source ${source} must use /audio/<id>.wav.`,
+    );
+  }
+  const title = trackTitles.get(id);
+  if (title === undefined) {
+    throw invalidDependency(`${PLAYLIST_FILE} does not contain a title for track ${id}.`);
+  }
+  return title;
+}
+
+function appendSubtitleCue(
+  cues: SubtitleCue[],
+  start: number,
+  end: number,
+  text: string,
+): void {
+  const previous = cues.at(-1);
+  if (previous !== undefined && previous.end > start) {
+    previous.end = start;
+    if (previous.end <= previous.start) {
+      cues.pop();
+    }
+  }
+  if (end <= start) {
+    return;
+  }
+  cues.push({
+    start,
+    end,
+    text: text.trim().replace(/\r\n?/gu, "\n").replace(/\n{2,}/gu, "\n"),
+  });
+}
+
+function formatSubRip(cues: SubtitleCue[]): string {
+  return cues
+    .map(
+      (cue, index) =>
+        `${index + 1}\n${formatSubtitleTime(cue.start)} --> ${formatSubtitleTime(cue.end)}\n${cue.text}\n`,
+    )
+    .join("\n");
+}
+
+function formatSubtitleTime(seconds: number): string {
+  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000));
+  const milliseconds = totalMilliseconds % 1000;
+  const totalSeconds = Math.floor(totalMilliseconds / 1000);
+  const second = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minute = totalMinutes % 60;
+  const hour = Math.floor(totalMinutes / 60);
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")},${String(milliseconds).padStart(3, "0")}`;
 }
 
 async function resolveEventSource(

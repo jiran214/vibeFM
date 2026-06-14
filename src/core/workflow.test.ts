@@ -9,6 +9,7 @@ import type { ProgramEventsResult } from "./events.js";
 import type { ProgramPlanResult } from "./plans.js";
 import type { ProgramRenderResult } from "./render.js";
 import type { ProgramScriptResult } from "./scripts.js";
+import type { DetailResult } from "./detail.js";
 import type { SpeechGenerationResult } from "./speech.js";
 import {
   generateProgramWorkflow,
@@ -36,6 +37,16 @@ async function writeInfoWithPlan(workspace: Workspace) {
   await writeFile(infoPath, JSON.stringify({ ...existing, think: "plan", track_ids: [1, 2, 3] }));
 }
 
+async function writeInfoWithDetail(workspace: Workspace) {
+  const infoPath = path.join(workspace.path, "info.json");
+  const existing = JSON.parse(await readFile(infoPath, "utf8"));
+  await writeFile(infoPath, JSON.stringify({
+    ...existing,
+    tracks_lyrics: [{ id: 1, lyrics: [] }],
+    tracks_comments: [{ id: 1, comments: [] }],
+  }));
+}
+
 function createDependencies(
   workspace: Workspace,
   calls: string[],
@@ -50,6 +61,22 @@ function createDependencies(
         trackCount: count,
         think: "Night radio design",
       } satisfies ProgramPlanResult;
+    },
+    generateDetail: async () => {
+      calls.push("detail");
+      const infoPath = path.join(workspace.path, "info.json");
+      const existing = JSON.parse(await readFile(infoPath, "utf8"));
+      await writeFile(infoPath, JSON.stringify({
+        ...existing,
+        tracks_lyrics: existing.track_ids?.map((id: number) => ({ id, lyrics: [] })) ?? [],
+        tracks_comments: existing.track_ids?.map((id: number) => ({ id, comments: [] })) ?? [],
+      }));
+      return {
+        workspace,
+        trackCount: 3,
+        lyricsCount: 0,
+        commentsCount: 0,
+      } satisfies DetailResult;
     },
     generateScript: async () => {
       calls.push("script");
@@ -102,10 +129,12 @@ function createDependencies(
     generateRender: async () => {
       calls.push("render");
       await writeArtifact(workspace, "output/program.mp3");
+      await writeArtifact(workspace, "output/program.srt");
       await writeArtifact(workspace, "output/manifest.json");
       return {
         workspace,
         path: path.join(workspace.path, "output", "program.mp3"),
+        subtitles: path.join(workspace.path, "output", "program.srt"),
         manifest: path.join(workspace.path, "output", "manifest.json"),
         durationSeconds: 120,
         eventCount: 6,
@@ -135,6 +164,7 @@ test("generateProgramWorkflow runs every stage in order and forwards options", a
 
   assert.deepEqual(calls, [
     `plan:3:${baseDirectory}`,
+    "detail",
     "script",
     "events",
     "audio:exhigh:false",
@@ -146,6 +176,8 @@ test("generateProgramWorkflow runs every stage in order and forwards options", a
     [
       "plan:started",
       "plan:completed",
+      "detail:started",
+      "detail:completed",
       "script:started",
       "script:completed",
       "events:started",
@@ -161,6 +193,7 @@ test("generateProgramWorkflow runs every stage in order and forwards options", a
   assert.equal(result.output, path.join(workspace.path, "output", "program.mp3"));
   assert.deepEqual(result.stages, [
     { stage: "plan", status: "completed" },
+    { stage: "detail", status: "completed" },
     { stage: "script", status: "completed" },
     { stage: "events", status: "completed" },
     { stage: "audio", status: "completed" },
@@ -172,6 +205,7 @@ test("generateProgramWorkflow runs every stage in order and forwards options", a
 test("generateProgramWorkflow resumes after the failed stage on the next run", async () => {
   const { baseDirectory, workspace } = await setupWorkspace();
   await writeInfoWithPlan(workspace);
+  await writeInfoWithDetail(workspace);
   const firstCalls: string[] = [];
   const firstProgress: WorkflowProgressEvent[] = [];
   const firstDependencies = createDependencies(workspace, firstCalls);
@@ -194,6 +228,7 @@ test("generateProgramWorkflow resumes after the failed stage on the next run", a
     firstProgress.map(({ stage, status }) => `${stage}:${status}`),
     [
       "plan:skipped",
+      "detail:skipped",
       "script:started",
       "script:completed",
       "events:started",
@@ -219,12 +254,14 @@ test("generateProgramWorkflow resumes after the failed stage on the next run", a
 test("generateProgramWorkflow force reruns media and downstream render", async () => {
   const { baseDirectory, workspace } = await setupWorkspace();
   await writeInfoWithPlan(workspace);
+  await writeInfoWithDetail(workspace);
   for (const artifact of [
     "script.md",
     "events.json",
     "audio/manifest.json",
     "speech/manifest.json",
     "output/program.mp3",
+    "output/program.srt",
     "output/manifest.json",
   ]) {
     await writeArtifact(workspace, artifact);
@@ -243,8 +280,9 @@ test("generateProgramWorkflow force reruns media and downstream render", async (
     "speech:Mia:true",
     "render",
   ]);
-  assert.deepEqual(result.stages.slice(0, 3), [
+  assert.deepEqual(result.stages.slice(0, 4), [
     { stage: "plan", status: "skipped" },
+    { stage: "detail", status: "skipped" },
     { stage: "script", status: "skipped" },
     { stage: "events", status: "skipped" },
   ]);

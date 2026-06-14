@@ -19,6 +19,11 @@ import {
   type ProgramRenderResult,
 } from "./render.js";
 import {
+  generateDetail,
+  type GenerateDetailOptions,
+  type DetailResult,
+} from "./detail.js";
+import {
   generateProgramScript,
   type ProgramScriptResult,
 } from "./scripts.js";
@@ -32,6 +37,7 @@ import { getWorkspace, type Workspace } from "./workspaces.js";
 
 export const WORKFLOW_STAGES = [
   "plan",
+  "detail",
   "script",
   "events",
   "audio",
@@ -55,6 +61,7 @@ export interface WorkflowProgressEvent {
 
 export interface GenerateWorkflowOptions {
   count?: number;
+  commentLimit?: number;
   quality?: string;
   voice?: TtsVoice;
   force?: boolean;
@@ -67,6 +74,11 @@ export interface WorkflowDependencies {
     count: number,
     baseDirectory: string,
   ) => Promise<ProgramPlanResult>;
+  generateDetail?: (
+    workspaceName: string,
+    baseDirectory: string,
+    options: GenerateDetailOptions,
+  ) => Promise<DetailResult>;
   generateScript?: (
     workspaceName: string,
     baseDirectory: string,
@@ -117,11 +129,12 @@ export interface WorkflowResult {
 
 const STAGE_ARTIFACTS: Record<WorkflowStage, string[]> = {
   plan: [],
+  detail: [],
   script: ["script.md"],
   events: ["events.json"],
   audio: ["audio/manifest.json"],
   speech: ["speech/manifest.json"],
-  render: ["output/program.mp3", "output/manifest.json"],
+  render: ["output/program.mp3", "output/program.srt", "output/manifest.json"],
 };
 
 export async function generateProgramWorkflow(
@@ -213,6 +226,13 @@ async function runStage(
       await generatePlan(workspaceName, options.count, baseDirectory);
       return;
     }
+    case "detail": {
+      const generateDetailFn = dependencies.generateDetail ?? generateDetail;
+      await generateDetailFn(workspaceName, baseDirectory, {
+        limit: options.commentLimit,
+      });
+      return;
+    }
     case "script": {
       const generateScript =
         dependencies.generateScript ?? generateProgramScript;
@@ -253,11 +273,14 @@ async function isStageComplete(
   workspacePath: string,
   stage: WorkflowStage,
 ): Promise<boolean> {
-  if (stage === "plan") {
+  if (stage === "plan" || stage === "detail") {
     try {
       const content = await readFile(path.join(workspacePath, "info.json"), "utf8");
       const info = JSON.parse(content);
-      return Array.isArray(info.track_ids) && info.track_ids.length > 0;
+      if (stage === "plan") {
+        return Array.isArray(info.track_ids) && info.track_ids.length > 0;
+      }
+      return Array.isArray(info.tracks_lyrics) && info.tracks_lyrics.length > 0;
     } catch {
       return false;
     }

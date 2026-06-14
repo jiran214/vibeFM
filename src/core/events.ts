@@ -5,8 +5,13 @@ import {
   parseRadioScript,
   RadioScriptParseError,
   type RadioScriptEvent,
+  type RadioScriptFrontmatter,
 } from "./radio-script.js";
-import { getWorkspace, type Workspace } from "./workspaces.js";
+import {
+  getWorkspace,
+  WORKSPACE_INFO_FILE,
+  type Workspace,
+} from "./workspaces.js";
 
 const SCRIPT_FILE = "script.md";
 const EVENTS_FILE = "events.json";
@@ -102,12 +107,21 @@ export interface ProgramEventsResult {
   eventCount: number;
   hostCount: number;
   playCount: number;
+  frontmatter: RadioScriptFrontmatter;
 }
 
-export function parseRadioEvents(scriptText: string): RadioEvent[] {
+export interface ParsedRadioEvents {
+  events: RadioEvent[];
+  frontmatter: RadioScriptFrontmatter;
+}
+
+export function parseRadioEvents(scriptText: string): ParsedRadioEvents {
   let sourceEvents: RadioScriptEvent[];
+  let frontmatter: RadioScriptFrontmatter;
   try {
-    sourceEvents = parseRadioScript(scriptText).events;
+    const doc = parseRadioScript(scriptText);
+    sourceEvents = doc.events;
+    frontmatter = doc.frontmatter;
   } catch (error) {
     if (error instanceof RadioScriptParseError) {
       throw new EventGenerationError(
@@ -120,7 +134,7 @@ export function parseRadioEvents(scriptText: string): RadioEvent[] {
   }
 
   let hostIndex = 0;
-  return sourceEvents.map((event): RadioEvent => {
+  const events = sourceEvents.map((event): RadioEvent => {
     if (event.type === "host") {
       hostIndex += 1;
       return compact({
@@ -152,6 +166,7 @@ export function parseRadioEvents(scriptText: string): RadioEvent[] {
       fadeOut: event.fadeOut,
     }) as RadioEvent;
   });
+  return { events, frontmatter };
 }
 
 export async function generateProgramEvents(
@@ -173,9 +188,16 @@ export async function generateProgramEvents(
     throw error;
   }
 
-  const events = parseRadioEvents(scriptText);
+  const { events, frontmatter } = parseRadioEvents(scriptText);
   const artifactPath = path.join(workspace.path, EVENTS_FILE);
   await writeJsonAtomically(artifactPath, events);
+
+  const infoPath = path.join(workspace.path, WORKSPACE_INFO_FILE);
+  const existingInfo = await readJsonFile(infoPath);
+  if (existingInfo && typeof existingInfo === "object" && !Array.isArray(existingInfo)) {
+    const updatedInfo = { ...existingInfo, ...frontmatter };
+    await writeJsonAtomically(infoPath, updatedInfo);
+  }
 
   return {
     workspace,
@@ -187,6 +209,7 @@ export async function generateProgramEvents(
     playCount: events.filter(
       (event) => event.type === "audio" && event.role === "main",
     ).length,
+    frontmatter,
   };
 }
 
@@ -206,6 +229,18 @@ async function writeJsonAtomically(filePath: string, value: unknown): Promise<vo
     await rename(temporaryPath, filePath);
   } finally {
     await rm(temporaryPath, { force: true });
+  }
+}
+
+async function readJsonFile(filePath: string): Promise<unknown> {
+  try {
+    const content = await readFile(filePath, "utf8");
+    return JSON.parse(content);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
   }
 }
 

@@ -14,9 +14,8 @@ const SCRIPT_SYSTEM_PROMPT = "script.system.md";
 const SCRIPT_USER_PROMPT = "script.user.md";
 const SCRIPT_FORMAT = "radio-script-dsl" as const;
 const REQUIRED_USER_PROMPT_PLACEHOLDERS = [
-  "{{info_json}}",
-  "{{plan_json}}",
-  "{{tracks_json}}",
+  "{{prompt}}",
+  "{{tracks_info}}",
   "{{dsl_markdown}}",
 ] as const;
 
@@ -63,6 +62,9 @@ interface PlaylistTrack {
   title: string;
   artists: string[];
   album: string;
+  durationSeconds?: number;
+  lyrics?: string;
+  comment?: string;
 }
 
 interface JsonObject {
@@ -90,6 +92,16 @@ export async function generateProgramScript(
   const tracksById = new Map(
     playlist.map((track) => [canonicalId(track.id), track]),
   );
+  const lyricsById = new Map(
+    Array.isArray(info.tracks_lyrics)
+      ? (info.tracks_lyrics as Array<{ id: JsonId; lyrics: string }>).map((t) => [canonicalId(t.id), t.lyrics])
+      : [],
+  );
+  const commentsById = new Map(
+    Array.isArray(info.tracks_comments)
+      ? (info.tracks_comments as Array<{ id: JsonId; comments: string[] }>).map((t) => [canonicalId(t.id), t.comments])
+      : [],
+  );
   const selectedTracks = plan.track_ids.map((id, index) => {
     const track = tracksById.get(canonicalId(id));
     if (track === undefined) {
@@ -97,7 +109,15 @@ export async function generateProgramScript(
         `info.json track_ids contains a track outside playlist.json at index ${index}.`,
       );
     }
-    return { order: index + 1, ...track };
+    const trackId = canonicalId(id);
+    const lyrics = lyricsById.get(trackId);
+    const comments = commentsById.get(trackId);
+    return {
+      order: index + 1,
+      ...track,
+      lyrics,
+      comment: comments?.join("\n"),
+    };
   });
 
   const promptDirectory =
@@ -110,9 +130,8 @@ export async function generateProgramScript(
   validateUserTemplate(userTemplate);
 
   const userPrompt = userTemplate
-    .replaceAll("{{info_json}}", JSON.stringify(info))
-    .replaceAll("{{plan_json}}", JSON.stringify(plan))
-    .replaceAll("{{tracks_json}}", JSON.stringify(selectedTracks))
+    .replaceAll("{{prompt}}", String(info.prompt))
+    .replaceAll("{{tracks_info}}", formatTracksInfo(selectedTracks))
     .replaceAll("{{dsl_markdown}}", dslMarkdown.trim());
   const messages: AiMessage[] = [
     { role: "system", content: systemTemplate.trim() },
@@ -224,6 +243,9 @@ function parsePlaylist(value: unknown): PlaylistTrack[] {
       asNonEmptyString(asObject(artist)?.name),
     );
     const album = asNonEmptyString(asObject(track?.album)?.name) ?? "Unknown album";
+    const durationMs = typeof track?.durationMs === "number" ? track.durationMs : undefined;
+    const lyrics = typeof track?.lyrics === "string" ? track.lyrics : undefined;
+    const comment = typeof track?.comment === "string" ? track.comment : undefined;
     if (
       id === undefined ||
       title === undefined ||
@@ -235,7 +257,7 @@ function parsePlaylist(value: unknown): PlaylistTrack[] {
         `playlist.json contains an invalid track at index ${index}.`,
       );
     }
-    return { id, title, artists: artists as string[], album };
+    return { id, title, artists: artists as string[], album, durationSeconds: durationMs !== undefined ? Math.round(durationMs / 1000) : undefined, lyrics, comment };
   });
   const ids = tracks.map((track) => canonicalId(track.id));
   if (new Set(ids).size !== ids.length) {
@@ -372,6 +394,28 @@ function asJsonId(value: unknown): JsonId | undefined {
 
 function canonicalId(value: JsonId): string {
   return String(value);
+}
+
+function formatTracksInfo(tracks: PlaylistTrack[]): string {
+  return tracks
+    .map((track, index) => {
+      const parts = [
+        `## ${index + 1}. ${track.title}`,
+        `歌曲ID：${track.id}`,
+        `创作者：${track.artists.join("、")}`,
+      ];
+      if (track.durationSeconds !== undefined) {
+        parts.push(`时长：${track.durationSeconds}秒`);
+      }
+      if (track.lyrics) {
+        parts.push(`歌词：\n${track.lyrics}`);
+      }
+      if (track.comment) {
+        parts.push(`评论：${track.comment}`);
+      }
+      return parts.join("\n");
+    })
+    .join("\n\n");
 }
 
 function invalidDependency(message: string): ScriptGenerationError {

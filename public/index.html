@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="vibeFM AI 电台节目工作台">
+  <title>vibeFM · AI Radio Workspace</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#080907',
+            panel: '#10120f',
+            'panel-raised': '#151712',
+            paper: '#e7e5d9',
+            muted: '#8d9085',
+            acid: '#d9ff43',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .shell {
+      position: relative;
+      width: min(1440px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    .shell::after {
+      position: absolute;
+      top: 18rem;
+      right: -25rem;
+      z-index: -1;
+      width: 42rem;
+      aspect-ratio: 1;
+      border: 1px solid rgba(217, 255, 67, 0.1);
+      border-radius: 50%;
+      content: "";
+      box-shadow:
+        0 0 0 7rem rgba(217, 255, 67, 0.015),
+        0 0 0 14rem rgba(217, 255, 67, 0.01);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: calc(100% - 8rem);
+      margin: 0 auto;
+      padding: 2.25rem 0 1.25rem;
+      border-bottom: 1px solid var(--line);
+      animation: reveal 700ms 80ms both;
+    }
+
+    .brand,
+    .status,
+    .eyebrow,
+    .section-code,
+    .card-kicker,
+    .playlist-meta,
+    .show-playlist-name,
+    .footer-note {
+      font-family: var(--condensed);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.1rem;
+      font-weight: 800;
+    }
+
+    .brand-mark {
+      position: relative;
+      width: 1.15rem;
+      aspect-ratio: 1;
+      border: 1px solid var(--acid);
+      border-radius: 50%;
+    }
+
+    .brand-mark::after {
+      position: absolute;
+      inset: 31%;
+      border-radius: 50%;
+      background: var(--acid);
+      content: "";
+    }
+
+    .brand-dial {
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      color: var(--acid);
+      font-size: 0.68rem;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .status-light {
+      width: 0.42rem;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: var(--acid);
+      box-shadow: 0 0 0 0 rgba(217, 255, 67, 0.35);
+      animation: signal 2s infinite;
+    }
+
+    .workspace {
+      width: min(1180px, calc(100% - 8rem));
+      margin: 0 auto;
+      padding: 6.2rem 0 4rem;
+    }
+
+    .hero {
+      display: grid;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      margin: 0 0 1.15rem;
+      color: var(--acid);
+      font-size: 0.7rem;
+      font-weight: 800;
+      animation: reveal 700ms 180ms both;
+    }
+
+    .eyebrow::before,
+    .eyebrow::after {
+      width: 2.2rem;
+      height: 1px;
+      background: var(--acid);
+      content: "";
+    }
+
+    h1 {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: clamp(8rem, 18vw, 16rem) !important;
+      font-weight: 400;
+      line-height: 0.75;
+      letter-spacing: -0.09em;
+      animation: reveal 850ms 240ms both;
+    }
+
+    h1 em {
+      color: var(--acid);
+      font-weight: 400;
+    }
+
+    .hero-copy {
+      max-width: 34rem;
+      margin: 2.1rem 0 0;
+      color: var(--muted);
+      font-family: var(--serif);
+      font-size: 1rem;
+      line-height: 1.7;
+      animation: reveal 700ms 320ms both;
+    }
+
+    .create-area {
+      width: min(900px, 100%);
+      margin-top: 3.2rem;
+      animation: reveal 800ms 390ms both;
+    }
+
+    .create-form {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      padding: 0.5rem;
+      border: 1px solid var(--line-strong);
+      background: rgba(16, 18, 15, 0.88);
+      box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.28);
+      transition: border-color 180ms ease, box-shadow 180ms ease;
+      backdrop-filter: blur(16px);
+    }
+
+    .create-form:focus-within {
+      border-color: rgba(217, 255, 67, 0.7);
+      box-shadow: 0 0 0 1px rgba(217, 255, 67, 0.12), 0 1.5rem 5rem rgba(0, 0, 0, 0.34);
+    }
+
+    .create-form.is-invalid {
+      border-color: #ff7b63;
+    }
+
+    .create-input {
+      width: 100%;
+      min-width: 0;
+      padding: 1rem 1.25rem;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      font-size: 0.96rem;
+    }
+
+    .create-input::placeholder {
+      color: #6f7269;
+    }
+
+    .create-button {
+      border: 1px solid var(--acid);
+      background: var(--acid);
+      color: var(--ink);
+      font-family: var(--condensed);
+      font-size: 0.7rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+      min-width: 8.5rem;
+      padding: 0 1.7rem;
+    }
+
+    .create-button:hover:not(:disabled) {
+      background: transparent;
+      color: var(--acid);
+    }
+
+    .create-button:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.72;
+    }
+
+    .form-message {
+      min-height: 1.25rem;
+      margin: 0.75rem 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: left;
+    }
+
+    .form-message[data-state="error"] {
+      color: #ff927d;
+    }
+
+    .form-message[data-state="success"] {
+      color: var(--acid);
+    }
+
+    .library {
+      margin-top: 7rem;
+      animation: reveal 800ms 480ms both;
+    }
+
+    .library-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 2rem;
+      margin-bottom: 1.4rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 2.4rem;
+    }
+
+    .tab {
+      position: relative;
+      padding: 0 0 1rem;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-family: var(--serif);
+      font-size: clamp(1.25rem, 2.4vw, 2rem);
+      transition: color 180ms ease;
+    }
+
+    .tab::after {
+      position: absolute;
+      right: 0;
+      bottom: -2px;
+      left: 0;
+      height: 3px;
+      background: var(--acid);
+      content: "";
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 220ms ease;
+    }
+
+    .tab:hover,
+    .tab[aria-selected="true"] {
+      color: var(--paper);
+    }
+
+    .tab[aria-selected="true"]::after {
+      transform: scaleX(1);
+    }
+
+    .tab-count {
+      position: relative;
+      top: -0.5rem;
+      margin-left: 0.35rem;
+      color: var(--acid);
+      font-family: var(--condensed);
+      font-size: 0.62rem;
+      letter-spacing: 0.08em;
+    }
+
+    .section-code {
+      padding-bottom: 1.05rem;
+      color: #5f6259;
+      font-size: 0.62rem;
+      line-height: 1.6;
+      text-align: right;
+    }
+
+    .library-rule {
+      height: 1px;
+      margin-bottom: 2.4rem;
+      background: linear-gradient(90deg, var(--line-strong), var(--line) 70%, transparent);
+    }
+
+    [role="tabpanel"][hidden] {
+      display: none;
+    }
+
+    .playlist-grid,
+    .show-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border: 1px solid var(--line);
+    }
+
+    .playlist-card,
+    .show-card {
+      position: relative;
+      min-width: 0;
+      background: rgba(8, 9, 7, 0.94);
+      transition: background 220ms ease;
+    }
+
+    .playlist-card:hover,
+    .show-card:hover {
+      background: var(--panel-raised);
+    }
+
+    .playlist-card {
+      display: grid;
+      grid-template-columns: 6.5rem 1fr;
+      gap: 1.15rem;
+      min-height: 10.5rem;
+      padding: 1.35rem;
+    }
+
+    .cover {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1;
+      overflow: hidden;
+      align-self: start;
+      background: #1b1d18;
+    }
+
+    .cover::after {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      content: "";
+    }
+
+    .cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.78) contrast(1.08);
+      transition: filter 260ms ease, transform 500ms cubic-bezier(.2, .8, .2, 1);
+    }
+
+    .playlist-card:hover .cover img,
+    .show-card:hover .cover img {
+      filter: saturate(1) contrast(1.03);
+      transform: scale(1.045);
+    }
+
+    .playlist-body {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+    }
+
+    .card-kicker {
+      margin: 0 0 0.65rem;
+      color: var(--acid);
+      font-size: 0.56rem;
+      font-weight: 800;
+    }
+
+    .playlist-title,
+    .show-title {
+      margin: 0;
+      font-family: var(--serif);
+      font-weight: 400;
+    }
+
+    .playlist-title {
+      display: -webkit-box;
+      overflow: hidden;
+      font-size: 1.12rem;
+      line-height: 1.25;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .playlist-meta {
+      margin: 0.65rem 0 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.56rem;
+      line-height: 1.55;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .import-button {
+      width: fit-content;
+      min-width: 4.8rem;
+      margin-top: auto;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--line-strong);
+      background: transparent;
+      color: var(--paper);
+      font-family: var(--condensed);
+      font-size: 0.58rem;
+      font-weight: 900;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+    }
+
+    .import-button:hover:not(:disabled) {
+      border-color: var(--acid);
+    }
+
+    .import-button.is-complete {
+      border-color: rgba(217, 255, 67, 0.44);
+      color: var(--acid);
+    }
+
+    .show-card {
+      padding: 1.35rem;
+    }
+
+    .show-link {
+      display: block;
+    }
+
+    .show-card .cover {
+      aspect-ratio: 1;
+    }
+
+    .show-card .cover::before {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      content: "";
+      background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.72));
+    }
+
+    .show-number {
+      position: absolute;
+      right: 0.8rem;
+      bottom: 0.65rem;
+      z-index: 2;
+      color: var(--acid);
+      font-family: var(--condensed);
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .show-number.is-generating {
+      animation: blink-progress 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink-progress {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .show-copy {
+      padding: 1.2rem 0 0.3rem;
+    }
+
+    .show-title {
+      overflow: hidden;
+      font-size: 1.6rem;
+      line-height: 1.1;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .show-prompt {
+      display: -webkit-box;
+      min-height: 3.15rem;
+      margin: 0.8rem 0 1.2rem;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.55;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .show-playlist-name {
+      display: block;
+      margin: 0.5rem 0 0;
+      overflow: hidden;
+      color: var(--muted);
+      font-family: var(--condensed);
+      font-size: 0.56rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 3px;
+      background: var(--acid);
+      transition: width 300ms ease;
+      animation: blink-bar 1.2s ease-in-out infinite;
+    }
+
+    @keyframes blink-bar {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 2rem;
+      width: calc(100% - 8rem);
+      margin: 2rem auto 0;
+      padding: 1.4rem 0 2.5rem;
+      border-top: 1px solid var(--line);
+    }
+
+    .footer-note {
+      margin: 0;
+      color: #5d6058;
+      font-size: 0.58rem;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1080px) {
+      .topbar,
+      .footer {
+        width: calc(100% - 4rem);
+      }
+
+      .workspace {
+        width: calc(100% - 4rem);
+      }
+
+      .playlist-grid,
+      .show-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar,
+      .footer {
+        width: calc(100% - 2rem);
+      }
+
+      .topbar {
+        padding-top: 1.3rem;
+      }
+
+      .brand-dial,
+      .status-label,
+      .section-code {
+        display: none;
+      }
+
+      .workspace {
+        width: calc(100% - 2rem);
+        padding-top: 4.5rem;
+      }
+
+      h1 {
+        font-size: clamp(6rem, 30vw, 10rem) !important;
+      }
+
+      .hero-copy {
+        max-width: 22rem;
+        font-size: 0.9rem;
+      }
+
+      .create-area {
+        margin-top: 2.5rem;
+      }
+
+      .create-form {
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+      }
+
+      .create-input {
+        min-height: 3.6rem;
+      }
+
+      .create-button {
+        min-height: 3.25rem;
+      }
+
+      .library {
+        margin-top: 5rem;
+      }
+
+      .tabs {
+        width: 100%;
+        gap: 1.4rem;
+      }
+
+      .tab {
+        flex: 1;
+        font-size: 1.14rem;
+        text-align: left;
+      }
+
+      .playlist-grid,
+      .show-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .playlist-card {
+        grid-template-columns: 5.8rem 1fr;
+      }
+
+      .footer {
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .eyebrow::before,
+      .eyebrow::after {
+        width: 1rem;
+      }
+
+      .playlist-card {
+        grid-template-columns: 5.2rem 1fr;
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/index.html" aria-label="vibeFM 首页">
+        <span class="brand-mark" aria-hidden="true"></span>
+        vibeFM
+      </a>
+      <div class="status" id="test-status" aria-label="测试连接" role="button" tabindex="0">
+        <span class="status-light" aria-hidden="true"></span>
+        <span class="status-label">Test Connection</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="hero" aria-labelledby="page-title">
+        <h1 id="page-title">vibe<em>FM</em></h1>
+        <p class="hero-copy">从一张歌单开始，挑选歌曲、编排情绪，让 AI 完成属于你的电台节目。</p>
+
+        <div class="create-area">
+          <form class="create-form" id="create-form" novalidate>
+            <label for="radio-source" hidden>网易云歌单链接或节目描述</label>
+            <input class="create-input" id="radio-source" name="source" type="text" autocomplete="off" placeholder="粘贴网易云歌单链接或描述你想听的节目..." aria-describedby="form-message">
+            <button class="create-button" type="submit">创建节目</button>
+          </form>
+          <p class="form-message" id="form-message" aria-live="polite">支持网易云歌单链接 · 描述创建模式即将开放</p>
+        </div>
+      </section>
+
+      <section class="library" aria-label="音乐资料库">
+        <div class="library-heading">
+          <div class="tabs" role="tablist" aria-label="资料库分类">
+            <button class="tab" id="created-shows-tab" type="button" role="tab" aria-selected="true" aria-controls="created-shows-panel" tabindex="0">
+              已创建节目 <span class="tab-count" id="show-count">00</span>
+            </button>
+          </div>
+          <div class="section-code">Library Index<br>CN-SHA / 2026</div>
+        </div>
+        <div class="library-rule" aria-hidden="true"></div>
+
+        <div id="created-shows-panel" role="tabpanel" aria-labelledby="created-shows-tab">
+          <div class="show-grid" id="show-grid">
+            <!-- Dynamic show cards will be inserted here -->
+          </div>
+          <p id="empty-state" style="color: var(--muted); font-size: 0.82rem; padding: 2rem 0; text-align: center;">
+            暂无节目，创建你的第一个电台节目吧
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p class="footer-note">vibeFM / AI Radio Production Workspace</p>
+      <p class="footer-note">Local Library · Signal 96%</p>
+    </footer>
+  </div>
+
+  <script type="module">
+    import { listWorkspaces, createWorkspace, testConnection } from '/js/api.js';
+
+    const createForm = document.querySelector('#create-form');
+    const createInput = document.querySelector('#radio-source');
+    const createButton = createForm.querySelector('button');
+    const formMessage = document.querySelector('#form-message');
+    const showGrid = document.querySelector('#show-grid');
+    const showCount = document.querySelector('#show-count');
+    const emptyState = document.querySelector('#empty-state');
+    const testStatus = document.querySelector('#test-status');
+
+    let pollInterval = null;
+
+    // Load workspaces on page load
+    async function loadWorkspaces() {
+      try {
+        const { items } = await listWorkspaces();
+        renderShowCards(items);
+        startPollingIfNeeded(items);
+      } catch (error) {
+        console.error('Failed to load workspaces:', error);
+      }
+    }
+
+    function renderShowCards(items) {
+      showGrid.innerHTML = '';
+      showCount.textContent = String(items.length).padStart(2, '0');
+      emptyState.style.display = items.length === 0 ? 'block' : 'none';
+
+      // Sort by name descending (newest first, since name contains timestamp)
+      const sorted = [...items].sort((a, b) => b.name.localeCompare(a.name));
+
+      for (const item of sorted) {
+        const card = createShowCard(item);
+        showGrid.appendChild(card);
+      }
+    }
+
+    function createShowCard(item) {
+      const card = document.createElement('article');
+      card.className = 'show-card';
+      card.dataset.name = item.name;
+      card.dataset.progress = item.progress;
+
+      const isComplete = item.progress === 100;
+      const coverUrl = item.playlistImageUrl || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=84';
+
+      card.innerHTML = `
+        <a class="show-link" href="${isComplete ? `/show.html?name=${encodeURIComponent(item.name)}` : '#'}"
+           aria-label="${isComplete ? `打开节目：${item.title}` : '节目生成中'}"
+           ${!isComplete ? 'onclick="return false"' : ''}>
+          <div class="cover">
+            <img src="${coverUrl}" alt="${item.title} 节目封面" loading="lazy">
+            <span class="show-number${!isComplete ? ' is-generating' : ''}">${isComplete ? 'Ready' : `${item.progress}%`}</span>
+          </div>
+          <div class="show-copy">
+            <h2 class="show-title">${item.title}</h2>
+            <p class="show-prompt">${item.prompt || ''}</p>
+            ${item.playlist_name ? `<span class="show-playlist-name">${item.playlist_name}</span>` : ''}
+          </div>
+        </a>
+        ${!isComplete ? `<div class="progress-bar" style="width: ${item.progress}%"></div>` : ''}
+      `;
+
+      return card;
+    }
+
+    function startPollingIfNeeded(items) {
+      const hasInProgress = items.some(item => item.progress < 100);
+
+      if (hasInProgress && !pollInterval) {
+        pollInterval = setInterval(async () => {
+          try {
+            const { items } = await listWorkspaces();
+            renderShowCards(items);
+
+            if (!items.some(item => item.progress < 100)) {
+              clearInterval(pollInterval);
+              pollInterval = null;
+            }
+          } catch (error) {
+            console.error('Polling failed:', error);
+          }
+        }, 5000);
+      } else if (!hasInProgress && pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+
+    // Create form submission
+    createForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const source = createInput.value.trim();
+
+      if (!source) {
+        createForm.classList.add('is-invalid');
+        createInput.setAttribute('aria-invalid', 'true');
+        formMessage.dataset.state = 'error';
+        formMessage.textContent = '请输入网易云歌单链接或节目描述。';
+        createInput.focus();
+        return;
+      }
+
+      createButton.disabled = true;
+      createButton.textContent = '创建中...';
+      formMessage.dataset.state = '';
+      formMessage.textContent = '正在建立节目工作空间...';
+
+      try {
+        const isUrl = /^https?:\/\//iu.test(source);
+        const shortId = Math.random().toString(36).substring(2, 8);
+        const body = {
+          name: `show-${Date.now()}-${shortId}`,
+          prompt: isUrl ? '' : source,
+        };
+
+        if (isUrl) {
+          body.playlistUrl = source;
+        }
+
+        await createWorkspace(body);
+
+        createInput.value = '';
+        formMessage.dataset.state = 'success';
+        formMessage.textContent = '创建成功，已加入节目工作台。';
+
+        // Reload workspaces
+        await loadWorkspaces();
+      } catch (error) {
+        formMessage.dataset.state = 'error';
+        formMessage.textContent = error.message || '创建失败，请重试。';
+      } finally {
+        createButton.disabled = false;
+        createButton.textContent = '创建节目';
+      }
+    });
+
+    createInput.addEventListener('input', () => {
+      createForm.classList.remove('is-invalid');
+      createInput.removeAttribute('aria-invalid');
+      formMessage.dataset.state = '';
+      formMessage.textContent = '支持网易云歌单链接 · 描述创建模式即将开放';
+    });
+
+    // Test connection
+    testStatus.addEventListener('click', async () => {
+      const statusLabel = testStatus.querySelector('.status-label');
+      statusLabel.textContent = 'Testing...';
+
+      try {
+        const result = await testConnection();
+        const hasErrors = result.errors && result.errors.length > 0;
+        statusLabel.textContent = hasErrors ? 'Partial OK' : 'Connected';
+        testStatus.style.color = hasErrors ? '#ff927d' : 'var(--acid)';
+      } catch (error) {
+        statusLabel.textContent = 'Failed';
+        testStatus.style.color = '#ff927d';
+      }
+
+      setTimeout(() => {
+        statusLabel.textContent = 'Test Connection';
+        testStatus.style.color = '';
+      }, 3000);
+    });
+
+    // Pause polling when page is hidden
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      } else if (!document.hidden) {
+        loadWorkspaces();
+      }
+    });
+
+    // Initial load
+    loadWorkspaces();
+  </script>
+</body>
+</html>
