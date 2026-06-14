@@ -28,22 +28,7 @@ const ASSET_EXTENSIONS = [
   ".ogg",
   ".opus",
 ];
-const EVENT_TYPES = new Set([
-  "host",
-  "play",
-  "bgm",
-  "sfx",
-  "pause",
-  "transition",
-]);
-const TRANSITION_TYPES = new Set([
-  "soft",
-  "fade",
-  "radio",
-  "whoosh",
-  "silence",
-  "cut",
-]);
+const EVENT_TYPES = new Set(["audio", "pause", "crossfade"]);
 
 export type ProgramRenderErrorCode =
   | "MISSING_RENDER_DEPENDENCY"
@@ -94,6 +79,7 @@ interface FileSegment {
   type: "file";
   filePath: string;
   duration: number;
+  start?: number;
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
@@ -110,16 +96,25 @@ interface SilenceSegment {
 type TimelineSegment = FileSegment | SilenceSegment;
 
 interface ActiveBgm {
-  name: string;
+  source: string;
   filePath: string;
   startAt: number;
+  sourceStart: number;
   volume: number;
   fadeIn: number;
   fadeOut: number;
+  ducks: DuckSpan[];
 }
 
 interface BgmSpan extends ActiveBgm {
   duration: number;
+}
+
+interface DuckSpan {
+  startAt: number;
+  duration: number;
+  volume: number;
+  fade: number;
 }
 
 interface RenderGraph {
@@ -142,10 +137,20 @@ export async function generateProgramRender(
   );
 
   const hostIds = new Set(
-    events.filter((event) => event.type === "host").map((event) => event.id),
+    events
+      .filter((event) => event.type === "audio" && event.role === "host")
+      .map((event) => event.id),
   );
   const trackIds = new Set(
-    events.filter((event) => event.type === "play").map((event) => event.id),
+    events
+      .filter(
+        (event) =>
+          event.type === "audio" &&
+          (event.role === "main" ||
+            (event.role === "bed" && event.action === "start")),
+      )
+      .map((event) => trackIdFromSource(event.source))
+      .filter((id): id is string => id !== undefined),
   );
   const speechMedia = hostIds.size === 0
     ? new Map<string, string>()
@@ -173,6 +178,7 @@ export async function generateProgramRender(
     events,
     speechMedia,
     trackMedia,
+    workspace.path,
     assetsDirectory,
     (filePath) => probeDuration(filePath, options.ffprobePath ?? "ffprobe"),
   );
@@ -262,6 +268,7 @@ async function buildTimeline(
   events: RadioEvent[],
   speechMedia: Map<string, string>,
   trackMedia: Map<string, string>,
+  workspaceDirectory: string,
   assetsDirectory: string,
   probeDuration: (filePath: string) => Promise<number>,
 ): Promise<{ segments: TimelineSegment[]; bgmSpans: BgmSpan[] }> {
@@ -293,7 +300,7 @@ async function buildTimeline(
     }
     const spanDuration = duration - activeBgm.startAt;
     if (spanDuration <= 0) {
-      throw invalidDependency(`BGM ${activeBgm.name} has no audible duration.`);
+      throw invalidDependency(`Bed audio ${activeBgm.source} has no audible duration.`);
     }
     bgmSpans.push({
       ...activeBgm,
@@ -305,87 +312,97 @@ async function buildTimeline(
 
   for (const event of events) {
     switch (event.type) {
-      case "host": {
-        const filePath = requiredMedia(speechMedia, event.id, "speech");
-        appendSegment({
-          type: "file",
-          filePath,
-          duration: await probeValidDuration(filePath, probeDuration),
-        });
-        break;
-      }
-      case "play": {
-        const filePath = requiredMedia(trackMedia, event.id, "audio");
-        appendSegment({
-          type: "file",
-          filePath,
-          duration: await probeValidDuration(filePath, probeDuration),
-          fadeIn: event.fadeIn,
-          fadeOut: event.fadeOut,
-        });
-        break;
-      }
       case "pause":
         appendSegment({ type: "silence", duration: event.duration });
         break;
-      case "sfx": {
-        const filePath = await resolveAsset(assetsDirectory, "sfx", event.name);
-        appendSegment({
-          type: "file",
-          filePath,
-          duration: await probeValidDuration(filePath, probeDuration),
-          volume: event.volume,
-        });
-        break;
-      }
-      case "bgm":
-        if (pendingCrossfade !== undefined) {
-          throw invalidDependency("BGM controls cannot split a fade transition.");
+      case "crossfade":
+        if (pendingCrossfade !== undefined || segments.length === 0) {
+          throw invalidDependency(
+            "A crossfade must be between two main timeline audio segments.",
+          );
         }
-        if (event.action === "start") {
+        pendingCrossfade = event.duration;
+        break;
+      case "audio": {
+        if (event.role === "host") {
+          const filePath = requiredMedia(speechMedia, event.id, "speech");
+          assertWorkspaceSource(event.source, workspaceDirectory, filePath);
+          const hostDuration = await probeValidDuration(filePath, probeDuration);
+          appendSegment({
+            type: "file",
+            filePath,
+            duration: hostDuration,
+          });
+          if (activeBgm !== undefined && event.duckTo !== undefined) {
+            activeBgm.ducks.push({
+              startAt: duration - hostDuration - activeBgm.startAt,
+              duration: hostDuration,
+              volume: event.duckTo,
+              fade: event.duckFade ?? 0,
+            });
+          }
+          break;
+        }
+        if (event.role === "bed") {
+          if (pendingCrossfade !== undefined) {
+            throw invalidDependency(
+              "Bed audio controls cannot split a crossfade.",
+            );
+          }
+          if (event.action === "stop") {
+            closeBgm();
+            break;
+          }
           if (activeBgm !== undefined) {
             throw invalidDependency(
-              `BGM ${event.name} starts before BGM ${activeBgm.name} stops.`,
+              `Bed audio ${event.source} starts before ${activeBgm.source} stops.`,
             );
           }
           activeBgm = {
-            name: event.name,
-            filePath: await resolveAsset(assetsDirectory, "bgm", event.name),
+            source: event.source,
+            filePath: await resolveEventSource(
+              event.source,
+              workspaceDirectory,
+              assetsDirectory,
+              trackMedia,
+            ),
             startAt: duration,
+            sourceStart: event.start ?? 0,
             volume: event.volume ?? 0.25,
             fadeIn: event.fadeIn ?? 0,
             fadeOut: event.fadeOut ?? 0,
+            ducks: [],
           };
-        } else {
-          closeBgm(event.fadeOut);
+          break;
         }
+
+        const filePath = event.role === "main"
+          ? requiredTrackSource(event.source, trackMedia)
+          : await resolveEventSource(
+              event.source,
+              workspaceDirectory,
+              assetsDirectory,
+              trackMedia,
+            );
+        const mediaDuration = await probeValidDuration(filePath, probeDuration);
+        const start = event.start ?? 0;
+        const segmentDuration = event.duration ?? mediaDuration - start;
+        if (start >= mediaDuration || segmentDuration <= 0 || start + segmentDuration > mediaDuration) {
+          throw invalidDependency(
+            `Audio source ${event.source} has an invalid start or duration.`,
+          );
+        }
+        appendSegment(compactSegment({
+          type: "file" as const,
+          filePath,
+          start,
+          duration: segmentDuration,
+          volume: event.volume,
+          fadeIn: event.fadeIn,
+          fadeOut: event.fadeOut,
+        }));
         break;
-      case "transition":
-        if (event.transitionType === "fade") {
-          if (pendingCrossfade !== undefined || segments.length === 0) {
-            throw invalidDependency("A fade transition must be between two audio segments.");
-          }
-          pendingCrossfade = event.duration;
-          break;
-        }
-        if (event.transitionType === "cut") {
-          break;
-        }
-        if (event.transitionType === "soft" || event.transitionType === "silence") {
-          appendSegment({ type: "silence", duration: event.duration });
-          break;
-        }
-        // appendSegment({
-        //   type: "file",
-        //   filePath: await resolveAsset(
-        //     assetsDirectory,
-        //     "sfx",
-        //     event.transitionType,
-        //   ),
-        //   duration: event.duration,
-        //   loop: true,
-        // });
-        break;
+      }
     }
   }
 
@@ -427,7 +444,7 @@ function buildFilterGraph(
     const chain = [
       `[${inputIndex}:a]aresample=${SAMPLE_RATE}`,
       `aformat=sample_fmts=fltp:sample_rates=${SAMPLE_RATE}:channel_layouts=stereo`,
-      `atrim=duration=${formatNumber(segment.duration)}`,
+      `atrim=start=${formatNumber(segment.start ?? 0)}:duration=${formatNumber(segment.duration)}`,
       "asetpts=PTS-STARTPTS",
     ];
     inputIndex += 1;
@@ -474,11 +491,16 @@ function buildFilterGraph(
     const chain = [
       `[${inputIndex}:a]aresample=${SAMPLE_RATE}`,
       `aformat=sample_fmts=fltp:sample_rates=${SAMPLE_RATE}:channel_layouts=stereo`,
-      `atrim=duration=${formatNumber(span.duration)}`,
+      `atrim=start=${formatNumber(span.sourceStart)}:duration=${formatNumber(span.duration)}`,
       "asetpts=PTS-STARTPTS",
       `volume=${formatNumber(span.volume)}`,
     ];
     inputIndex += 1;
+    for (const duck of span.ducks) {
+      chain.push(
+        `volume='${buildDuckExpression(duck, span.volume)}':eval=frame`,
+      );
+    }
     if (span.fadeIn > 0) {
       chain.push(
         `afade=t=in:st=0:d=${formatNumber(Math.min(span.fadeIn, span.duration))}`,
@@ -516,6 +538,32 @@ function buildFilterGraph(
   return { args, filterGraph: filters.join(";\n"), inputCount: inputIndex };
 }
 
+function buildDuckExpression(duck: DuckSpan, bedVolume: number): string {
+  const ratio = bedVolume <= 0
+    ? 0
+    : Math.min(duck.volume, bedVolume) / bedVolume;
+  const start = Math.max(0, duck.startAt);
+  const end = start + duck.duration;
+  const fade = Math.min(duck.fade, duck.duration / 2);
+  if (fade <= 0) {
+    return `if(between(t,${formatNumber(start)},${formatNumber(end)}),${formatNumber(ratio)},1)`;
+  }
+  const fadeInStart = Math.max(0, start - fade);
+  const fadeOutEnd = end + fade;
+  if (fadeInStart === start) {
+    return (
+      `if(lt(t,${formatNumber(end)}),${formatNumber(ratio)},` +
+      `if(lt(t,${formatNumber(fadeOutEnd)}),${formatNumber(ratio)}+(1-${formatNumber(ratio)})*(t-${formatNumber(end)})/${formatNumber(fade)},1))`
+    );
+  }
+  return (
+    `if(lt(t,${formatNumber(fadeInStart)}),1,` +
+    `if(lt(t,${formatNumber(start)}),1+(${formatNumber(ratio)}-1)*(t-${formatNumber(fadeInStart)})/${formatNumber(fade)},` +
+    `if(lt(t,${formatNumber(end)}),${formatNumber(ratio)},` +
+    `if(lt(t,${formatNumber(fadeOutEnd)}),${formatNumber(ratio)}+(1-${formatNumber(ratio)})*(t-${formatNumber(end)})/${formatNumber(fade)},1))))`
+  );
+}
+
 function parseStoredEvents(eventsText: string): RadioEvent[] {
   let parsed: unknown;
   try {
@@ -545,53 +593,54 @@ function validateEvent(
   hostIds: Set<string>,
 ): void {
   switch (type) {
-    case "host": {
-      const id = nonEmptyString(event.id);
-      if (id === undefined || !/^host-\d{3,}$/u.test(id)) {
-        throw invalidEvent(index, "requires an id such as host-001");
-      }
-      if (hostIds.has(id)) {
-        throw invalidEvent(index, `duplicates host id ${id}`);
-      }
-      hostIds.add(id);
-      if (nonEmptyString(event.text) === undefined || nonEmptyString(event.voiceDesignPrompt) === undefined) {
-        throw invalidEvent(index, "requires text and voiceDesignPrompt");
-      }
-      return;
-    }
-    case "play":
-      if (!/^\d+$/u.test(nonEmptyString(event.id) ?? "")) {
-        throw invalidEvent(index, "requires a numeric play id");
-      }
-      validateOptionalNumber(event.fadeIn, index, "fadeIn", 0);
-      validateOptionalNumber(event.fadeOut, index, "fadeOut", 0);
-      return;
-    case "bgm":
-      if (event.action !== "start" && event.action !== "stop") {
-        throw invalidEvent(index, "requires a valid bgm action");
-      }
-      if (event.action === "start" && nonEmptyString(event.name) === undefined) {
-        throw invalidEvent(index, "requires a bgm name");
-      }
-      validateOptionalNumber(event.volume, index, "volume", 0, 1);
-      validateOptionalNumber(event.fadeIn, index, "fadeIn", 0);
-      validateOptionalNumber(event.fadeOut, index, "fadeOut", 0);
-      return;
-    case "sfx":
-      if (nonEmptyString(event.name) === undefined) {
-        throw invalidEvent(index, "requires an sfx name");
-      }
-      validateOptionalNumber(event.volume, index, "volume", 0, 1);
-      return;
     case "pause":
       validateNumber(event.duration, index, "duration", 0, false);
       return;
-    case "transition":
-      if (typeof event.transitionType !== "string" || !TRANSITION_TYPES.has(event.transitionType)) {
-        throw invalidEvent(index, "requires a valid transitionType");
-      }
+    case "crossfade":
       validateNumber(event.duration, index, "duration", 0, false);
       return;
+    case "audio": {
+      const role = event.role;
+      if (role !== "host" && role !== "main" && role !== "bed" && role !== "effect") {
+        throw invalidEvent(index, "requires a valid audio role");
+      }
+      if (role === "host") {
+        const id = nonEmptyString(event.id);
+        if (id === undefined || !/^host-\d{3,}$/u.test(id)) {
+          throw invalidEvent(index, "requires an id such as host-001");
+        }
+        if (hostIds.has(id)) {
+          throw invalidEvent(index, `duplicates host id ${id}`);
+        }
+        hostIds.add(id);
+        if (
+          nonEmptyString(event.source) === undefined ||
+          nonEmptyString(event.text) === undefined ||
+          nonEmptyString(event.voiceDesignPrompt) === undefined
+        ) {
+          throw invalidEvent(index, "requires source, text and voiceDesignPrompt");
+        }
+        validateOptionalNumber(event.duckTo, index, "duckTo", 0, 1);
+        validateOptionalNumber(event.duckFade, index, "duckFade", 0);
+        return;
+      }
+      if (role === "bed") {
+        if (event.action !== "start" && event.action !== "stop") {
+          throw invalidEvent(index, "requires a bed action");
+        }
+        if (event.action === "start" && nonEmptyString(event.source) === undefined) {
+          throw invalidEvent(index, "requires a bed source");
+        }
+      } else if (nonEmptyString(event.source) === undefined) {
+        throw invalidEvent(index, "requires an audio source");
+      }
+      validateOptionalNumber(event.start, index, "start", 0);
+      validateOptionalNumber(event.duration, index, "duration", 0);
+      validateOptionalNumber(event.volume, index, "volume", 0, 1);
+      validateOptionalNumber(event.fadeIn, index, "fadeIn", 0);
+      validateOptionalNumber(event.fadeOut, index, "fadeOut", 0);
+      return;
+    }
   }
 }
 
@@ -669,6 +718,72 @@ async function readMediaManifest(
     }
   }
   return media;
+}
+
+function trackIdFromSource(source: string): string | undefined {
+  return /^\/audio\/(\d+)\.wav$/u.exec(source)?.[1];
+}
+
+function requiredTrackSource(
+  source: string,
+  trackMedia: Map<string, string>,
+): string {
+  const id = trackIdFromSource(source);
+  if (id === undefined) {
+    throw invalidDependency(
+      `Main audio source ${source} must use /audio/<id>.wav.`,
+    );
+  }
+  return requiredMedia(trackMedia, id, "audio");
+}
+
+async function resolveEventSource(
+  source: string,
+  workspaceDirectory: string,
+  assetsDirectory: string,
+  trackMedia: Map<string, string>,
+): Promise<string> {
+  const trackId = trackIdFromSource(source);
+  if (trackId !== undefined) {
+    return requiredMedia(trackMedia, trackId, "audio");
+  }
+  if (source.startsWith("bgm/")) {
+    return resolveAsset(assetsDirectory, "bgm", source.slice(4));
+  }
+  if (source.startsWith("sfx/")) {
+    return resolveAsset(assetsDirectory, "sfx", source.slice(4));
+  }
+  if (!source.startsWith("/")) {
+    throw invalidDependency(`Audio source ${source} is unsupported.`);
+  }
+  const filePath = path.resolve(workspaceDirectory, source.slice(1));
+  if (!isInside(workspaceDirectory, filePath)) {
+    throw invalidDependency(`Audio source ${source} is unsafe.`);
+  }
+  await ensureMediaFile(filePath, `Audio source ${source} does not exist or is empty.`);
+  return filePath;
+}
+
+function assertWorkspaceSource(
+  source: string,
+  workspaceDirectory: string,
+  expectedPath: string,
+): void {
+  if (!source.startsWith("/")) {
+    throw invalidDependency(`Host audio source ${source} must be workspace-relative.`);
+  }
+  const resolved = path.resolve(workspaceDirectory, source.slice(1));
+  if (!isInside(workspaceDirectory, resolved) || resolved !== expectedPath) {
+    throw invalidDependency(
+      `Host audio source ${source} does not match speech manifest media.`,
+    );
+  }
+}
+
+function compactSegment(value: FileSegment): FileSegment {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  ) as unknown as FileSegment;
 }
 
 async function resolveAsset(

@@ -12,24 +12,31 @@ import {
 
 function validEvents(): unknown[] {
   return [
-    { type: "bgm", action: "start", name: "soft_ambient", volume: 0.25 },
+    { type: "audio", action: "start", source: "/audio/123.wav", role: "bed", volume: 0.25 },
     {
-      type: "host",
+      type: "audio",
       id: "host-001",
+      source: "",
+      role: "host",
       voiceDesignPrompt: "Warm and welcoming",
       text: "Welcome to the show.",
     },
-    { type: "play", id: "123" },
+    { type: "audio", action: "stop", role: "bed" },
+    { type: "audio", source: "/audio/123.wav", role: "main" },
     {
-      type: "host",
+      type: "audio",
       id: "host-002",
+      source: "",
+      role: "host",
       voiceDesignPrompt: "Reflective and calm",
       text: "First track reflection and second track introduction.",
     },
-    { type: "play", id: "456" },
+    { type: "audio", source: "/audio/456.wav", role: "main" },
     {
-      type: "host",
+      type: "audio",
       id: "host-003",
+      source: "",
+      role: "host",
       voiceDesignPrompt: "Gentle and unhurried",
       text: "Thank you for listening.",
     },
@@ -86,7 +93,7 @@ describe("parseEventsToSpeechSegments", () => {
 
   it("rejects an event stream without host events", () => {
     assert.throws(
-      () => parseEventsToSpeechSegments('[{"type":"play","id":"123"}]'),
+      () => parseEventsToSpeechSegments('[{"type":"audio","source":"/audio/123.wav","role":"main"}]'),
       (error: unknown) =>
         error instanceof SpeechGenerationError &&
         error.code === "INVALID_SPEECH_DEPENDENCY",
@@ -95,7 +102,7 @@ describe("parseEventsToSpeechSegments", () => {
 
   it("rejects incomplete host events", () => {
     const events = validEvents();
-    events[1] = { type: "host", id: "host-001", text: "Welcome." };
+    events[1] = { type: "audio", role: "host", id: "host-001", source: "", text: "Welcome." };
 
     assert.throws(
       () => parseEventsToSpeechSegments(JSON.stringify(events)),
@@ -107,7 +114,7 @@ describe("parseEventsToSpeechSegments", () => {
 
   it("rejects duplicate host ids", () => {
     const events = validEvents();
-    events[3] = { ...events[3] as object, id: "host-001" };
+    events[4] = { ...events[4] as object, id: "host-001" };
 
     assert.throws(
       () => parseEventsToSpeechSegments(JSON.stringify(events)),
@@ -119,7 +126,7 @@ describe("parseEventsToSpeechSegments", () => {
 
   it("rejects incomplete non-host events before synthesis", () => {
     const events = validEvents();
-    events[2] = { type: "play" };
+    events[3] = { type: "audio", role: "main", source: "" };
 
     assert.throws(
       () => parseEventsToSpeechSegments(JSON.stringify(events)),
@@ -178,6 +185,19 @@ describe("generateSpeech", () => {
         ),
       ),
       calls,
+    );
+    const updatedEvents = JSON.parse(
+      await readFile(path.join(workspaceDirectory, "events.json"), "utf8"),
+    );
+    assert.deepEqual(
+      updatedEvents
+        .filter((event: { role?: string }) => event.role === "host")
+        .map((event: { source: string }) => event.source),
+      [
+        "/speech/host-001.wav",
+        "/speech/host-002.wav",
+        "/speech/host-003.wav",
+      ],
     );
   });
 

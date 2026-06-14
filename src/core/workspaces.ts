@@ -1,4 +1,4 @@
-import { lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const WORKSPACE_DIRECTORY = ".vibefm";
@@ -164,7 +164,7 @@ export interface WorkspaceStatusResult {
 
 const STATUS_STAGES: { stage: string; file: string }[] = [
   { stage: "playlist", file: "playlist.json" },
-  { stage: "plan", file: "plan.json" },
+  { stage: "plan", file: "info.json" },
   { stage: "script", file: "script.md" },
   { stage: "events", file: "events.json" },
   { stage: "audio", file: "audio/manifest.json" },
@@ -184,9 +184,17 @@ export async function getWorkspaceStatus(
     let status: "completed" | "pending" = "pending";
     try {
       await lstat(filePath);
-      status = "completed";
+      if (stage === "plan") {
+        const content = await readFile(filePath, "utf8");
+        const info = JSON.parse(content);
+        status = Array.isArray(info.track_ids) && info.track_ids.length > 0
+          ? "completed"
+          : "pending";
+      } else {
+        status = "completed";
+      }
     } catch {
-      // file does not exist
+      // file does not exist or invalid JSON
     }
     stages.push({ stage, status });
   }

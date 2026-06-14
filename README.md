@@ -64,7 +64,7 @@ vibefm generate plan midnight-radio --count 10
 ```
 
 命令会读取 `info.json` 和 `playlist.json`，使用 `prompts/` 下的运行时模板调用 AI，
-并将校验后的结构化策划写入 `.vibefm/midnight-radio/plan.json`。
+并将校验后的结构化策划合并写入 `.vibefm/midnight-radio/info.json`。
 
 生成节目文稿：
 
@@ -72,10 +72,10 @@ vibefm generate plan midnight-radio --count 10
 vibefm generate script midnight-radio
 ```
 
-命令会校验 `info.json` 和 `plan.json`，使用 `prompts/` 下的文稿模板调用 AI，
+命令会校验 `info.json`（含 plan 数据）和 `playlist.json`，使用 `prompts/` 下的文稿模板调用 AI，
 并将符合 `docs/dsl.md` 的 RadioScript Markdown 文稿写入
-`.vibefm/<name>/script.md`。每个主持段落使用 `[host]`，歌曲播放节点使用
-`[play id="..."]`。
+`.vibefm/<name>/script.md`。主持段落使用 `<host>`，歌曲播放节点使用
+`<audio source="/audio/<id>.wav" role="main" />`。
 
 解析文稿事件流：
 
@@ -83,8 +83,9 @@ vibefm generate script midnight-radio
 vibefm generate events midnight-radio
 ```
 
-命令会严格解析 `script.md`，为 host 分配稳定 ID，并将有序事件数组写入
-`.vibefm/midnight-radio/events.json`。
+命令会严格解析 `script.md`，把 host 转成带文本、空 source 的 audio 事件，
+并将有序事件数组写入 `.vibefm/midnight-radio/events.json`。speech 阶段生成
+`speech/<host-id>.wav` 后会回写对应事件的 source。
 
 下载歌曲、生成口播并合成节目：
 

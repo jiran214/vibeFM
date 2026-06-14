@@ -125,20 +125,15 @@ prompts/plan.user.md
 `{{playlist_json}}` 占位符。`info.json` 会完整加入 Prompt；歌单会先由代码压缩，
 每首歌只提供 ID、标题、歌手和专辑，避免发送图片、时长等无关字段。
 
-生成结果会经过结构、数量、歌曲 ID 和情绪曲线校验，再原子写入：
+生成结果会经过结构、数量和歌曲 ID 校验，再原子写入 `info.json`，合并后结构：
 
-```text
-.vibefm/<节目空间命名>/plan.json
+```json
+{
+  "prompt": "原始描述",
+  "think": "如何设计这期电台节目",
+  "track_ids": [123, 456]
+}
 ```
-
-内容包括：
-
-- 节目主题
-- 选中歌曲
-- 选曲理由
-- 情绪曲线
-- 主播风格
-- 歌曲播放顺序
 
 成功输出示例：
 
@@ -152,16 +147,16 @@ prompts/plan.user.md
       "path": "/path/to/.vibefm/midnight-radio"
     },
     "plan": {
-      "path": "/path/to/.vibefm/midnight-radio/plan.json",
+      "path": "/path/to/.vibefm/midnight-radio/info.json",
       "trackCount": 10,
-      "theme": "午夜回声"
+      "think": "从夜晚的躁动逐渐走向平静"
     }
   }
 }
 ```
 
-模型返回非 JSON、歌曲重复、引用歌单外歌曲、数量不符或情绪曲线未完整覆盖
-入选歌曲时，命令立即失败，不会覆盖已有 `plan.json`。
+模型返回非 JSON、额外字段、歌曲重复、引用歌单外歌曲或数量不符时，
+命令立即失败，不会覆盖已有 `info.json`。
 
 ### 6. 生成节目文稿
 
@@ -169,7 +164,7 @@ prompts/plan.user.md
 vibefm generate script <节目空间命名>
 ```
 
-要求节目空间内已存在有效的 `info.json` 和 `plan.json`。等待 AI 返回期间，
+要求节目空间内已存在有效的 `info.json`（含 plan 数据）和 `playlist.json`。等待 AI 返回期间，
 CLI 会将 `AI 正在生成节目文稿，请稍候...` 输出到 `stderr`；最终结果仍以
 JSON 输出到 `stdout`。
 
@@ -180,19 +175,21 @@ prompts/script.system.md
 prompts/script.user.md
 ```
 
-`script.user.md` 必须保留 `{{info_json}}` 和 `{{plan_json}}` 占位符。
+`script.user.md` 必须保留 `{{info_json}}`、`{{plan_json}}`、
+`{{tracks_json}}` 和 `{{dsl_markdown}}` 占位符。
 AI 直接生成 `docs/dsl.md` 定义的 RadioScript Markdown DSL，包括开场、歌曲
 介绍与歌曲间串词、歌手信息表达、歌词主题解读、故事表达、结尾和音频事件。
 
-core 会校验 `# Opening`、`# Ending`、`[host]` 闭合和非空内容、
-`voice_design_prompt`，以及 `[play]` 的歌曲数量、ID 和顺序。通过后原子写入：
+core 会校验 frontmatter、`# Opening`、`# Ending`、`<host>` 闭合和非空内容，
+以及 `role="main"` 音频的数量、source 和顺序。歌曲 source 必须严格为
+`/audio/<id>.wav`。通过后原子写入：
 
 ```text
 .vibefm/<节目空间命名>/script.md
 ```
 
-文件可直接阅读和编辑，支持 `[host]`、`[play]`、`[bgm]`、`[sfx]`、
-`[pause]` 和 `[transition]`。不再生成或接受旧的 `[[PLAY:id]]` 标记。
+文件可直接阅读和编辑，支持 `<host>`、`<audio>`、`<pause />` 和
+`<crossfade />`。
 
 成功输出示例：
 
@@ -225,7 +222,7 @@ vibefm generate events <节目空间命名>
 ```
 
 要求节目空间内已存在有效的 `script.md`。命令按 DSL 中的先后顺序解析
-`[host]`、`[play]`、`[bgm]`、`[sfx]`、`[pause]` 和 `[transition]`，并原子写入：
+`<host>`、`<audio>`、`<pause />` 和 `<crossfade />`，并原子写入：
 
 ```text
 .vibefm/<节目空间命名>/events.json
@@ -233,11 +230,13 @@ vibefm generate events <节目空间命名>
 
 转换规则：
 
-- 每个 host 按出现顺序分配稳定 ID：`host-001`、`host-002`……
-- `volume="25"` 转换为 `volume: 0.25`
+- 每个 host 按出现顺序分配稳定 ID，并转成 `role: "host"` 的 audio 事件
+- host audio 初始 `source` 为空，同时保留 `text` 和 `voiceDesignPrompt`
+- `volume="25%"` 转换为 `volume: 0.25`
 - `fade_in="3s"`、`duration="2s"` 等时间转换为秒数
 - Markdown 标题不进入事件流
-- 未知事件、未知属性、非法时间、超出 `0..100` 的音量会导致命令失败
+- 成对的 bed audio 转成 start/stop 事件
+- 未知事件、未知属性、非法时间或非法百分比会导致命令失败
 - 解析失败时不会覆盖已有 `events.json`
 
 `events.json` 是事件数组，示例：
@@ -245,21 +244,25 @@ vibefm generate events <节目空间命名>
 ```json
 [
   {
-    "type": "bgm",
+    "type": "audio",
     "action": "start",
-    "name": "soft_ambient",
+    "source": "/audio/33894312.wav",
+    "role": "bed",
     "volume": 0.25,
     "fadeIn": 3
   },
   {
-    "type": "host",
+    "type": "audio",
     "id": "host-001",
+    "source": "",
+    "role": "host",
     "voiceDesignPrompt": "温柔、低声、语速偏慢",
     "text": "晚上好，欢迎来到《城市夜行》。"
   },
   {
-    "type": "play",
-    "id": "33894312",
+    "type": "audio",
+    "source": "/audio/33894312.wav",
+    "role": "main",
     "fadeIn": 2,
     "fadeOut": 3
   }
@@ -293,6 +296,9 @@ vibefm generate events <节目空间命名>
 vibefm generate audio <节目空间命名>
 ```
 
+命令只读取 `info.json.track_ids`，按数组顺序请求并下载歌曲，文件保存为
+`audio/<id>.wav`，同时写入 `audio/manifest.json`。
+
 ### 9. 文稿分批转语音
 
 ```bash
@@ -300,7 +306,7 @@ vibefm generate speech <节目空间命名> [--voice <voice>] [--force]
 ```
 
 要求节目空间内已存在完整的 `events.json`。命令按事件流顺序获取所有
-`type: "host"` 事件，每个 host 分别调用一次 TTS：
+`type: "audio", role: "host"` 事件，每个 host 分别调用一次 TTS：
 
 - `voiceDesignPrompt` 作为 TTS 的自然语言风格指令
 - `text` 作为待合成的口播文本
@@ -317,8 +323,9 @@ speech/<host id>.wav
 speech/manifest.json
 ```
 
-例如 `host-001` 对应 `speech/host-001.wav`。单段合成失败时会写入静音
-占位 WAV，并在 `manifest.json` 和命令输出的 `warnings` 中记录错误。
+例如 `host-001` 对应 `speech/host-001.wav`。生成后会把对应 audio 事件的
+source 更新为 `/speech/host-001.wav` 并原子回写 `events.json`。单段失败时会
+写入静音占位 WAV，并在 manifest 和命令输出的 warnings 中记录错误。
 
 ### 10. 合成节目
 
@@ -341,12 +348,11 @@ vibefm generate render <节目空间命名>
 
 事件处理规则：
 
-- `host`、`play`、`sfx` 按事件顺序进入主时间线
-- `pause`、`soft`、`silence` 生成指定时长的静音
-- `fade` 使用 `acrossfade` 交叉淡化相邻片段，时长不能超过任一相邻片段
-- `cut` 直接连接相邻片段
-- `radio`、`whoosh` 使用 `assets/sfx/radio.*`、`assets/sfx/whoosh.*`
-- BGM 从 `start` 持续到 `stop`，不足时循环，并按音量和淡入淡出参数混入
+- `role: "host"`、`main`、`effect` 按事件顺序进入主时间线
+- `pause` 生成指定时长的静音
+- `crossfade` 使用 `acrossfade` 交叉淡化相邻片段
+- bed 从 start 持续到 stop，不足时循环，并按音量和淡入淡出参数混入
+- host 的 `duckTo`、`duckFade` 用于在口播期间压低并恢复当前 bed
 
 所有素材先统一为 48 kHz、双声道浮点音频，再执行拼接和混音。最终使用
 `loudnorm` 归一化到 -16 LUFS、LRA 11、True Peak -1.5 dB，编码为

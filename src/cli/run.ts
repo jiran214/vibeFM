@@ -201,7 +201,7 @@ export async function runCli(
             plan: {
               path: result.path,
               trackCount: result.trackCount,
-              theme: result.theme,
+              think: result.think,
             },
           },
         });

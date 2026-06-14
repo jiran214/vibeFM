@@ -23,55 +23,31 @@ async function createFixture() {
     `${JSON.stringify({
       prompt: "适合深夜独处、情绪逐渐平静的节目",
       language: "zh-CN",
+      think: "从夜晚的躁动逐渐走向平静。",
+      track_ids: [2, 1],
     })}\n`,
   );
   await writeFile(
-    path.join(workspace.path, "plan.json"),
+    path.join(workspace.path, "playlist.json"),
     `${JSON.stringify({
-      version: 1,
-      generatedAt: "2026-06-13T12:00:00.000Z",
-      sourcePlaylist: { id: 100, name: "Midnight Radio" },
-      theme: {
-        title: "After Midnight",
-        description: "From restlessness to calm.",
+      playlist: {
+        id: 100,
+        name: "Midnight Radio",
+        tracks: [
+          {
+            id: 1,
+            name: "First Song",
+            artists: [{ name: "First Artist" }],
+            album: { name: "First Album" },
+          },
+          {
+            id: 2,
+            name: "Second Song",
+            artists: [{ name: "Second Artist" }, { name: "Guest Artist" }],
+            album: { name: "Second Album" },
+          },
+        ],
       },
-      hostStyle: {
-        persona: "A thoughtful late-night companion",
-        tone: "Warm and restrained",
-        delivery: "Slow with intentional pauses",
-      },
-      emotionalArc: [
-        {
-          stage: "Opening",
-          description: "Settle into the night",
-          trackIds: [2],
-        },
-        {
-          stage: "Landing",
-          description: "Arrive at calm",
-          trackIds: [1],
-        },
-      ],
-      tracks: [
-        {
-          order: 1,
-          id: 2,
-          title: "Second Song",
-          artists: ["Second Artist", "Guest Artist"],
-          album: "Second Album",
-          selectionReason: "A spacious opening",
-          emotion: "Reflective",
-        },
-        {
-          order: 2,
-          id: 1,
-          title: "First Song",
-          artists: ["First Artist"],
-          album: "First Album",
-          selectionReason: "A gentle resolution",
-          emotion: "Calm",
-        },
-      ],
     })}\n`,
   );
   await mkdir(path.join(baseDirectory, "prompts"));
@@ -85,35 +61,48 @@ async function createFixture() {
       "Write the show.",
       "INFO={{info_json}}",
       "PLAN={{plan_json}}",
+      "TRACKS={{tracks_json}}",
+      "DSL={{dsl_markdown}}",
     ].join("\n"),
+  );
+  await mkdir(path.join(baseDirectory, "docs"));
+  await writeFile(
+    path.join(baseDirectory, "docs", "dsl.md"),
+    "# RadioScript DSL\nUse <host> and <audio /> tags.",
   );
   return { baseDirectory, workspace };
 }
 
 function validAiResponse() {
   return [
+    "---",
+    "title: After Midnight",
+    "voice_design_prompt: Warm, restrained, and slow",
+    "---",
+    "",
     "# Opening",
     "",
-    '[host voice_design_prompt="Warm, restrained, and slow"]',
+    "<host>",
     "Welcome to After Midnight.",
-    "[/host]",
+    "</host>",
     "",
-    '[transition type="soft" duration="2s"]',
-    '[play id="2" fade_in="2s" fade_out="3s"]',
+    '<pause duration="2s" />',
+    '<audio source="/audio/2.wav" role="main" volume="100%" fade_in="2s" fade_out="3s" />',
     "",
     "# Block 1",
     "",
-    '[host voice_design_prompt="Reflective and conversational"]',
+    '<host voice_design_prompt="Reflective and conversational">',
     "From reflection, we move toward a quieter resolution.",
-    "[/host]",
+    "</host>",
     "",
-    '[play id="1" fade_in="2s" fade_out="3s"]',
+    '<crossfade duration="2s" />',
+    '<audio source="/audio/1.wav" role="main" volume="100%" fade_in="2s" fade_out="3s" />',
     "",
     "# Ending",
     "",
-    '[host voice_design_prompt="Gentle, calm, and unhurried"]',
+    '<host voice_design_prompt="Gentle, calm, and unhurried">',
     "Thank you for spending this quiet hour with us.",
-    "[/host]",
+    "</host>",
   ].join("\n");
 }
 
@@ -122,7 +111,6 @@ test("generateProgramScript writes the validated RadioScript DSL to script.md", 
   const requests: AiMessage[][] = [];
 
   const result = await generateProgramScript("night-radio", baseDirectory, {
-    now: () => new Date("2026-06-13T13:00:00.000Z"),
     requestAi: async (messages) => {
       requests.push(messages);
       return validAiResponse();
@@ -138,17 +126,17 @@ test("generateProgramScript writes the validated RadioScript DSL to script.md", 
   const userPrompt = String(requests[0][1].content);
   assert.match(userPrompt, /"language":"zh-CN"/u);
   assert.match(userPrompt, /"title":"Second Song"/u);
-  assert.doesNotMatch(userPrompt, /generatedAt|sourcePlaylist/u);
+  assert.match(userPrompt, /Use <host> and <audio \/> tags/u);
 
   const scriptText = await readFile(result.path, "utf8");
   assert.match(scriptText, /^# Opening$/mu);
   assert.match(scriptText, /Welcome to After Midnight\./u);
-  assert.match(scriptText, /\[play id="2" fade_in="2s" fade_out="3s"\]/u);
-  assert.match(scriptText, /\[play id="1" fade_in="2s" fade_out="3s"\]/u);
-  assert.match(scriptText, /voice_design_prompt="Warm, restrained, and slow"/u);
+  assert.match(scriptText, /<audio source="\/audio\/2\.wav" role="main"/u);
+  assert.match(scriptText, /<audio source="\/audio\/1\.wav" role="main"/u);
+  assert.match(scriptText, /voice_design_prompt: Warm, restrained, and slow/u);
   assert.match(scriptText, /Thank you for spending this quiet hour/u);
   assert.equal(scriptText, `${validAiResponse()}\n`);
-  assert.ok(scriptText.endsWith("[/host]\n"));
+  assert.ok(scriptText.endsWith("</host>\n"));
 });
 
 test("generateProgramScript checks dependencies before requesting AI", async () => {
@@ -165,7 +153,7 @@ test("generateProgramScript checks dependencies before requesting AI", async () 
     }),
     (error: unknown) =>
       error instanceof ScriptGenerationError &&
-      error.code === "MISSING_SCRIPT_DEPENDENCY",
+      error.code === "INVALID_SCRIPT_DEPENDENCY",
   );
   assert.equal(requested, false);
 });
@@ -173,8 +161,8 @@ test("generateProgramScript checks dependencies before requesting AI", async () 
 test("generateProgramScript rejects incomplete plan dependencies", async () => {
   const { baseDirectory, workspace } = await createFixture();
   await writeFile(
-    path.join(workspace.path, "plan.json"),
-    JSON.stringify({ version: 1, tracks: [] }),
+    path.join(workspace.path, "info.json"),
+    JSON.stringify({ prompt: "test", version: 1, tracks: [] }),
   );
 
   await assert.rejects(
@@ -187,13 +175,12 @@ test("generateProgramScript rejects incomplete plan dependencies", async () => {
   );
 });
 
-test("generateProgramScript requires valid plan source metadata", async () => {
+test("generateProgramScript requires a valid simplified plan", async () => {
   const { baseDirectory, workspace } = await createFixture();
-  const planPath = path.join(workspace.path, "plan.json");
-  const plan = JSON.parse(await readFile(planPath, "utf8"));
-  delete plan.sourcePlaylist;
-  plan.generatedAt = "not-a-date";
-  await writeFile(planPath, JSON.stringify(plan));
+  const infoPath = path.join(workspace.path, "info.json");
+  const info = JSON.parse(await readFile(infoPath, "utf8"));
+  info.track_ids = [2, 999];
+  await writeFile(infoPath, JSON.stringify(info));
   let requested = false;
 
   await assert.rejects(
@@ -216,10 +203,10 @@ test("generateProgramScript rejects reordered or unknown play events without rep
   await writeFile(scriptPath, "old script\n", "utf8");
   const invalidResponses = [
     validAiResponse()
-      .replace('[play id="2"', '[play id="swap"')
-      .replace('[play id="1"', '[play id="2"')
-      .replace('[play id="swap"', '[play id="1"'),
-    validAiResponse().replace('[play id="1"', '[play id="999"'),
+      .replace('/audio/2.wav', '/audio/swap.wav')
+      .replace('/audio/1.wav', '/audio/2.wav')
+      .replace('/audio/swap.wav', '/audio/1.wav'),
+    validAiResponse().replace('/audio/1.wav', '/audio/999.wav'),
   ];
 
   for (const response of invalidResponses) {
@@ -248,8 +235,8 @@ test("generateProgramScript rejects non-DSL or incomplete host sections", async 
       "Thank you.",
     ].join("\n"),
     validAiResponse().replace(
-      '[host voice_design_prompt="Warm, restrained, and slow"]',
-      "[host]",
+      "voice_design_prompt: Warm, restrained, and slow",
+      "voice_design_prompt:",
     ),
     validAiResponse().replace(
       "Thank you for spending this quiet hour with us.",
@@ -257,9 +244,9 @@ test("generateProgramScript rejects non-DSL or incomplete host sections", async 
     ),
     validAiResponse().replace(
       [
-        '[host voice_design_prompt="Reflective and conversational"]',
+        '<host voice_design_prompt="Reflective and conversational">',
         "From reflection, we move toward a quieter resolution.",
-        "[/host]",
+        "</host>",
         "",
       ].join("\n"),
       "",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -30,6 +30,12 @@ async function writeArtifact(workspace: Workspace, relativePath: string) {
   await writeFile(artifactPath, "complete");
 }
 
+async function writeInfoWithPlan(workspace: Workspace) {
+  const infoPath = path.join(workspace.path, "info.json");
+  const existing = JSON.parse(await readFile(infoPath, "utf8"));
+  await writeFile(infoPath, JSON.stringify({ ...existing, think: "plan", track_ids: [1, 2, 3] }));
+}
+
 function createDependencies(
   workspace: Workspace,
   calls: string[],
@@ -37,12 +43,12 @@ function createDependencies(
   return {
     generatePlan: async (_name, count, baseDirectory) => {
       calls.push(`plan:${count}:${baseDirectory}`);
-      await writeArtifact(workspace, "plan.json");
+      await writeInfoWithPlan(workspace);
       return {
         workspace,
-        path: path.join(workspace.path, "plan.json"),
+        path: path.join(workspace.path, "info.json"),
         trackCount: count,
-        theme: "Night",
+        think: "Night radio design",
       } satisfies ProgramPlanResult;
     },
     generateScript: async () => {
@@ -165,7 +171,7 @@ test("generateProgramWorkflow runs every stage in order and forwards options", a
 
 test("generateProgramWorkflow resumes after the failed stage on the next run", async () => {
   const { baseDirectory, workspace } = await setupWorkspace();
-  await writeArtifact(workspace, "plan.json");
+  await writeInfoWithPlan(workspace);
   const firstCalls: string[] = [];
   const firstProgress: WorkflowProgressEvent[] = [];
   const firstDependencies = createDependencies(workspace, firstCalls);
@@ -212,8 +218,8 @@ test("generateProgramWorkflow resumes after the failed stage on the next run", a
 
 test("generateProgramWorkflow force reruns media and downstream render", async () => {
   const { baseDirectory, workspace } = await setupWorkspace();
+  await writeInfoWithPlan(workspace);
   for (const artifact of [
-    "plan.json",
     "script.md",
     "events.json",
     "audio/manifest.json",

@@ -10,22 +10,6 @@ import {
 
 const EVENTS_FILE = "events.json";
 const SPEECH_DIR = "speech";
-const EVENT_TYPES = new Set([
-  "host",
-  "play",
-  "bgm",
-  "sfx",
-  "pause",
-  "transition",
-]);
-const TRANSITION_TYPES = new Set([
-  "soft",
-  "fade",
-  "radio",
-  "whoosh",
-  "silence",
-  "cut",
-]);
 
 export type SpeechGenerationErrorCode =
   | "MISSING_SPEECH_DEPENDENCY"
@@ -62,6 +46,7 @@ export interface GenerateSpeechOptions {
 
 interface SpeechSegment {
   index: number;
+  eventIndex: number;
   id: string;
   text: string;
   voiceDesignPrompt: string;
@@ -85,9 +70,16 @@ interface Manifest {
   segments: ManifestSegment[];
 }
 
-export function parseEventsToSpeechSegments(
-  eventsText: string,
-): SpeechSegment[] {
+interface ParsedSpeechEvents {
+  events: Record<string, unknown>[];
+  segments: SpeechSegment[];
+}
+
+export function parseEventsToSpeechSegments(eventsText: string): SpeechSegment[] {
+  return parseSpeechEvents(eventsText).segments;
+}
+
+function parseSpeechEvents(eventsText: string): ParsedSpeechEvents {
   let parsed: unknown;
   try {
     parsed = JSON.parse(eventsText);
@@ -98,7 +90,6 @@ export function parseEventsToSpeechSegments(
       { cause: error },
     );
   }
-
   if (!Array.isArray(parsed)) {
     throw new SpeechGenerationError(
       "INVALID_SPEECH_DEPENDENCY",
@@ -106,11 +97,8 @@ export function parseEventsToSpeechSegments(
     );
   }
 
-  const hostEvents: Array<{
-    id: string;
-    text: string;
-    voiceDesignPrompt: string;
-  }> = [];
+  const events: Record<string, unknown>[] = [];
+  const hosts: Array<Omit<SpeechSegment, "index" | "fileName">> = [];
   const hostIds = new Set<string>();
 
   for (const [eventIndex, value] of parsed.entries()) {
@@ -118,17 +106,9 @@ export function parseEventsToSpeechSegments(
     if (event === undefined) {
       throw invalidEvent(eventIndex, "must be an object");
     }
-    const eventType = event.type;
-    if (
-      typeof eventType !== "string" ||
-      !EVENT_TYPES.has(eventType)
-    ) {
-      throw invalidEvent(eventIndex, "has an invalid type");
-    }
-    validateStoredEvent(event, eventType, eventIndex);
-    if (eventType !== "host") {
-      continue;
-    }
+    validateStoredEvent(event, eventIndex);
+    events.push(event);
+    if (event.type !== "audio" || event.role !== "host") continue;
 
     const id = readNonEmptyString(event.id);
     const text = readNonEmptyString(event.text);
@@ -136,35 +116,31 @@ export function parseEventsToSpeechSegments(
     if (id === undefined || !/^host-\d{3,}$/u.test(id)) {
       throw invalidEvent(eventIndex, "requires an id such as host-001");
     }
-    if (text === undefined) {
-      throw invalidEvent(eventIndex, "requires non-empty text");
-    }
-    if (voiceDesignPrompt === undefined) {
-      throw invalidEvent(
-        eventIndex,
-        "requires a non-empty voiceDesignPrompt",
-      );
+    if (text === undefined || voiceDesignPrompt === undefined) {
+      throw invalidEvent(eventIndex, "requires text and voiceDesignPrompt");
     }
     if (hostIds.has(id)) {
       throw invalidEvent(eventIndex, `duplicates host id ${id}`);
     }
-
     hostIds.add(id);
-    hostEvents.push({ id, text, voiceDesignPrompt });
+    hosts.push({ eventIndex, id, text, voiceDesignPrompt });
   }
 
-  if (hostEvents.length === 0) {
+  if (hosts.length === 0) {
     throw new SpeechGenerationError(
       "INVALID_SPEECH_DEPENDENCY",
-      `${EVENTS_FILE} contains no host events.`,
+      `${EVENTS_FILE} contains no host audio events.`,
     );
   }
 
-  return hostEvents.map((host, index) => ({
-    index,
-    ...host,
-    fileName: `${host.id}.wav`,
-  }));
+  return {
+    events,
+    segments: hosts.map((host, index) => ({
+      index,
+      ...host,
+      fileName: `${host.id}.wav`,
+    })),
+  };
 }
 
 export async function generateSpeech(
@@ -174,7 +150,6 @@ export async function generateSpeech(
 ): Promise<SpeechGenerationResult> {
   const workspace = await getWorkspace(workspaceName, baseDirectory);
   const eventsPath = path.join(workspace.path, EVENTS_FILE);
-
   let eventsText: string;
   try {
     eventsText = await readFile(eventsPath, "utf8");
@@ -188,14 +163,11 @@ export async function generateSpeech(
     throw error;
   }
 
-  const segments = parseEventsToSpeechSegments(eventsText);
+  const { events, segments } = parseSpeechEvents(eventsText);
   const speechDir = path.join(workspace.path, SPEECH_DIR);
   await mkdir(speechDir, { recursive: true });
-
   const voice = options.voice ?? "冰糖";
   const synthesize = options.synthesizeSpeech ?? defaultSynthesizeSpeech;
-  const now = options.now ?? (() => new Date());
-
   const warnings: string[] = [];
   let synthesizedCount = 0;
   let placeholderCount = 0;
@@ -203,71 +175,50 @@ export async function generateSpeech(
 
   for (const segment of segments) {
     const wavPath = path.join(speechDir, segment.fileName);
+    let status: ManifestSegment["status"] = "synthesized";
+    let errorMessage: string | undefined;
 
-    // Skip existing files unless --force
-    if (!options.force && (await fileExists(wavPath))) {
-      manifestSegments.push({
-        index: segment.index,
-        id: segment.id,
-        text: segment.text,
-        voiceDesignPrompt: segment.voiceDesignPrompt,
-        status: "synthesized",
-        filePath: segment.fileName,
-      });
-      synthesizedCount++;
-      continue;
+    if (options.force || !(await fileExists(wavPath))) {
+      try {
+        const result = await synthesize(segment.text, voice, {
+          baseDirectory,
+          voiceDesignPrompt: segment.voiceDesignPrompt,
+          workspace: workspaceName,
+        });
+        await writeWavAtomically(wavPath, decodeAudioData(result.audioData));
+      } catch (error) {
+        status = "placeholder";
+        errorMessage = error instanceof Error ? error.message : "Unknown error";
+        warnings.push(
+          `Failed to synthesize host event ${segment.id}: ${errorMessage}`,
+        );
+        await writeWavAtomically(wavPath, createSilentWav());
+      }
     }
 
-    try {
-      const result = await synthesize(segment.text, voice, {
-        baseDirectory,
-        voiceDesignPrompt: segment.voiceDesignPrompt,
-        workspace: workspaceName,
-      });
-      const audioBuffer = decodeAudioData(result.audioData);
-      await writeWavAtomically(wavPath, audioBuffer);
-
-      manifestSegments.push({
-        index: segment.index,
-        id: segment.id,
-        text: segment.text,
-        voiceDesignPrompt: segment.voiceDesignPrompt,
-        status: "synthesized",
-        filePath: segment.fileName,
-      });
-      synthesizedCount++;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      warnings.push(
-        `Failed to synthesize host event ${segment.id}: ${errorMessage}`,
-      );
-
-      // Write silent WAV placeholder
-      await writeWavAtomically(wavPath, createSilentWav());
-
-      manifestSegments.push({
-        index: segment.index,
-        id: segment.id,
-        text: segment.text,
-        voiceDesignPrompt: segment.voiceDesignPrompt,
-        status: "placeholder",
-        filePath: segment.fileName,
-        error: errorMessage,
-      });
-      placeholderCount++;
-    }
+    if (status === "synthesized") synthesizedCount += 1;
+    else placeholderCount += 1;
+    manifestSegments.push({
+      index: segment.index,
+      id: segment.id,
+      text: segment.text,
+      voiceDesignPrompt: segment.voiceDesignPrompt,
+      status,
+      filePath: segment.fileName,
+      ...(errorMessage === undefined ? {} : { error: errorMessage }),
+    });
+    events[segment.eventIndex].source = `/${SPEECH_DIR}/${segment.fileName}`;
   }
 
-  // Write manifest
   const manifestPath = path.join(speechDir, "manifest.json");
   const manifestData: Manifest = {
     version: 1,
-    generatedAt: now().toISOString(),
+    generatedAt: (options.now ?? (() => new Date()))().toISOString(),
     voice,
     segments: manifestSegments,
   };
   await writeJsonAtomically(manifestPath, manifestData);
+  await writeJsonAtomically(eventsPath, events);
 
   return {
     workspace,
@@ -280,69 +231,55 @@ export async function generateSpeech(
   };
 }
 
-function asObject(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
+function validateStoredEvent(
+  event: Record<string, unknown>,
+  eventIndex: number,
+): void {
+  if (event.type === "pause" || event.type === "crossfade") {
+    validateRequiredNumber(event.duration, eventIndex, "duration", 0, false);
+    return;
   }
-  return value as Record<string, unknown>;
+  if (event.type !== "audio") {
+    throw invalidEvent(eventIndex, "has an invalid type");
+  }
+  if (!(["host", "main", "bed", "effect"] as const).includes(event.role as never)) {
+    throw invalidEvent(eventIndex, "has an invalid audio role");
+  }
+  if (event.role === "host") {
+    if (typeof event.source !== "string") {
+      throw invalidEvent(eventIndex, "requires a source string");
+    }
+    validateOptionalNumber(event.duckTo, eventIndex, "duckTo", 0, 1);
+    validateOptionalNumber(event.duckFade, eventIndex, "duckFade", 0);
+    return;
+  }
+  if (event.role === "bed") {
+    if (event.action !== "start" && event.action !== "stop") {
+      throw invalidEvent(eventIndex, "requires a bed action");
+    }
+    if (event.action === "start" && readNonEmptyString(event.source) === undefined) {
+      throw invalidEvent(eventIndex, "requires a bed source");
+    }
+  } else if (readNonEmptyString(event.source) === undefined) {
+    throw invalidEvent(eventIndex, "requires a source");
+  }
+  validateOptionalNumber(event.start, eventIndex, "start", 0);
+  validateOptionalNumber(event.duration, eventIndex, "duration", 0);
+  validateOptionalNumber(event.volume, eventIndex, "volume", 0, 1);
+  validateOptionalNumber(event.fadeIn, eventIndex, "fadeIn", 0);
+  validateOptionalNumber(event.fadeOut, eventIndex, "fadeOut", 0);
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function readNonEmptyString(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
+  if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function validateStoredEvent(
-  event: Record<string, unknown>,
-  eventType: string,
-  eventIndex: number,
-): void {
-  switch (eventType) {
-    case "host":
-      return;
-    case "play":
-      if (!/^\d+$/u.test(readNonEmptyString(event.id) ?? "")) {
-        throw invalidEvent(eventIndex, "requires a numeric play id");
-      }
-      validateOptionalNumber(event.fadeIn, eventIndex, "fadeIn", 0);
-      validateOptionalNumber(event.fadeOut, eventIndex, "fadeOut", 0);
-      return;
-    case "bgm":
-      if (event.action !== "start" && event.action !== "stop") {
-        throw invalidEvent(eventIndex, "requires a valid bgm action");
-      }
-      if (
-        event.action === "start" &&
-        readNonEmptyString(event.name) === undefined
-      ) {
-        throw invalidEvent(eventIndex, "requires a bgm name");
-      }
-      validateOptionalNumber(event.volume, eventIndex, "volume", 0, 1);
-      validateOptionalNumber(event.fadeIn, eventIndex, "fadeIn", 0);
-      validateOptionalNumber(event.fadeOut, eventIndex, "fadeOut", 0);
-      return;
-    case "sfx":
-      if (readNonEmptyString(event.name) === undefined) {
-        throw invalidEvent(eventIndex, "requires an sfx name");
-      }
-      validateOptionalNumber(event.volume, eventIndex, "volume", 0, 1);
-      return;
-    case "pause":
-      validateRequiredNumber(event.duration, eventIndex, "duration", 0, false);
-      return;
-    case "transition":
-      if (
-        typeof event.transitionType !== "string" ||
-        !TRANSITION_TYPES.has(event.transitionType)
-      ) {
-        throw invalidEvent(eventIndex, "requires a valid transitionType");
-      }
-      validateRequiredNumber(event.duration, eventIndex, "duration", 0, false);
-      return;
-  }
 }
 
 function validateOptionalNumber(
@@ -352,10 +289,9 @@ function validateOptionalNumber(
   minimum: number,
   maximum = Number.POSITIVE_INFINITY,
 ): void {
-  if (value === undefined) {
-    return;
+  if (value !== undefined) {
+    validateRequiredNumber(value, eventIndex, field, minimum, true, maximum);
   }
-  validateRequiredNumber(value, eventIndex, field, minimum, true, maximum);
 }
 
 function validateRequiredNumber(
@@ -387,30 +323,21 @@ function createSilentWav(): Buffer {
   const sampleRate = 44100;
   const channels = 1;
   const bitsPerSample = 16;
-  const durationSeconds = 1;
-  const dataSize = sampleRate * channels * (bitsPerSample / 8) * durationSeconds;
-  const headerSize = 44;
-  const wav = Buffer.alloc(headerSize + dataSize);
-
-  // RIFF header
+  const dataSize = sampleRate * channels * (bitsPerSample / 8);
+  const wav = Buffer.alloc(44 + dataSize);
   wav.write("RIFF", 0);
-  wav.writeUInt32LE(headerSize + dataSize - 8, 4);
+  wav.writeUInt32LE(36 + dataSize, 4);
   wav.write("WAVE", 8);
-
-  // fmt chunk
   wav.write("fmt ", 12);
   wav.writeUInt32LE(16, 16);
-  wav.writeUInt16LE(1, 20); // PCM
+  wav.writeUInt16LE(1, 20);
   wav.writeUInt16LE(channels, 22);
   wav.writeUInt32LE(sampleRate, 24);
   wav.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28);
   wav.writeUInt16LE(channels * (bitsPerSample / 8), 32);
   wav.writeUInt16LE(bitsPerSample, 34);
-
-  // data chunk
   wav.write("data", 36);
   wav.writeUInt32LE(dataSize, 40);
-
   return wav;
 }
 

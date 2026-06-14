@@ -12,46 +12,69 @@ import {
 import { createWorkspace } from "./workspaces.js";
 
 function completeScript(): string {
-  return `# Opening
-[bgm name="soft_ambient" volume="25" fade_in="3s"]
-[host voice_design_prompt="温柔、低声、语速偏慢"]
+  return `---
+title: 城市夜行
+voice_design_prompt: 温柔、低声、语速偏慢
+---
+
+# Opening
+<audio source="/audio/33894312.wav" role="bed" start="0s" volume="25%" fade_in="3s" fade_out="2s">
+<host duck_to="12%" duck_fade="0.8s">
 晚上好，欢迎来到《城市夜行》。
-[/host]
-[pause 1s]
-[sfx name="radio_noise" volume="15"]
-[bgm stop fade_out="2s"]
-[transition type="soft" duration="2s"]
-[play id="33894312" fade_in="2s" fade_out="3s"]
+</host>
+</audio>
+<pause duration="1s" />
+<audio source="sfx/radio_noise" role="effect" volume="15%" />
+<crossfade duration="2s" />
+<audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
 
 # Ending
-[host voice_design_prompt="温柔、放松、有晚安感"]
+<host voice_design_prompt="温柔、放松、有晚安感">
 我们下次再见。
-[/host]`;
+</host>`;
 }
 
 test("parseRadioEvents converts RadioScript into an ordered event stream", () => {
   assert.deepEqual(parseRadioEvents(completeScript()), [
     {
-      type: "bgm",
+      type: "audio",
       action: "start",
-      name: "soft_ambient",
+      source: "/audio/33894312.wav",
+      role: "bed",
+      start: 0,
       volume: 0.25,
       fadeIn: 3,
+      fadeOut: 2,
     },
     {
-      type: "host",
+      type: "audio",
       id: "host-001",
+      source: "",
+      role: "host",
       voiceDesignPrompt: "温柔、低声、语速偏慢",
       text: "晚上好，欢迎来到《城市夜行》。",
+      duckTo: 0.12,
+      duckFade: 0.8,
     },
+    { type: "audio", action: "stop", role: "bed" },
     { type: "pause", duration: 1 },
-    { type: "sfx", name: "radio_noise", volume: 0.15 },
-    { type: "bgm", action: "stop", fadeOut: 2 },
-    { type: "transition", transitionType: "soft", duration: 2 },
-    { type: "play", id: "33894312", fadeIn: 2, fadeOut: 3 },
+    { type: "audio", source: "sfx/radio_noise", role: "effect", volume: 0.15 },
+    { type: "crossfade", duration: 2 },
     {
-      type: "host",
+      type: "audio",
+      source: "/audio/33894312.wav",
+      role: "main",
+      start: 20,
+      duration: 90,
+      volume: 1,
+      fadeIn: 2,
+      fadeOut: 3,
+    },
+    {
+      type: "audio",
       id: "host-002",
+      source: "",
+      role: "host",
       voiceDesignPrompt: "温柔、放松、有晚安感",
       text: "我们下次再见。",
     },
@@ -94,15 +117,12 @@ test("invalid DSL does not replace an existing events.json", async () => {
   await writeFile(eventsPath, "old events\n");
 
   const invalidScripts = [
-    completeScript().replace("volume=\"25\"", "volume=\"101\""),
-    completeScript().replace("[pause 1s]", "[pause soon]"),
+    completeScript().replace('volume="25%"', 'volume="101%"'),
+    completeScript().replace('<pause duration="1s" />', '<pause duration="soon" />'),
+    completeScript().replace('role="effect"', 'role="unknown"'),
     completeScript().replace(
-      'transition type="soft"',
-      'transition type="unknown"',
-    ),
-    completeScript().replace(
-      'play id="33894312"',
-      'play id="33894312" extra="value"',
+      'role="main" start="20s"',
+      'role="main" extra="value" start="20s"',
     ),
   ];
 

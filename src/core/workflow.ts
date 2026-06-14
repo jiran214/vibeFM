@@ -1,4 +1,4 @@
-import { lstat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -116,7 +116,7 @@ export interface WorkflowResult {
 }
 
 const STAGE_ARTIFACTS: Record<WorkflowStage, string[]> = {
-  plan: ["plan.json"],
+  plan: [],
   script: ["script.md"],
   events: ["events.json"],
   audio: ["audio/manifest.json"],
@@ -253,6 +253,15 @@ async function isStageComplete(
   workspacePath: string,
   stage: WorkflowStage,
 ): Promise<boolean> {
+  if (stage === "plan") {
+    try {
+      const content = await readFile(path.join(workspacePath, "info.json"), "utf8");
+      const info = JSON.parse(content);
+      return Array.isArray(info.track_ids) && info.track_ids.length > 0;
+    } catch {
+      return false;
+    }
+  }
   const results = await Promise.all(
     STAGE_ARTIFACTS[stage].map(async (relativePath) => {
       try {

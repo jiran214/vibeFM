@@ -5,7 +5,7 @@ import path from "node:path";
 import { readCookie } from "./cookie.js";
 import { getWorkspace, type Workspace } from "./workspaces.js";
 
-const PLAN_FILE = "plan.json";
+const INFO_FILE = "info.json";
 
 export type AudioDownloadErrorCode =
   | "MISSING_AUDIO_DEPENDENCY"
@@ -38,9 +38,6 @@ type JsonId = string | number;
 interface PlanTrack {
   order: number;
   id: JsonId;
-  title: string;
-  artists: string[];
-  album: string;
 }
 
 interface PlanInput {
@@ -193,9 +190,6 @@ export async function generateAudio(
         return {
           order: track.order,
           id: track.id,
-          title: track.title,
-          artists: track.artists,
-          album: track.album,
           status: result?.status ?? "missing",
           filePath: result?.filePath,
         };
@@ -349,9 +343,6 @@ export async function generateAudio(
       return {
         order: track.order,
         id: track.id,
-        title: track.title,
-        artists: track.artists,
-        album: track.album,
         status: result?.status ?? "missing",
         filePath: result?.filePath,
         br: result?.br,
@@ -375,7 +366,7 @@ export async function generateAudio(
 }
 
 async function readPlan(workspacePath: string): Promise<unknown> {
-  const filePath = path.join(workspacePath, PLAN_FILE);
+  const filePath = path.join(workspacePath, INFO_FILE);
   let content: string;
   try {
     content = await readFile(filePath, "utf8");
@@ -383,7 +374,7 @@ async function readPlan(workspacePath: string): Promise<unknown> {
     if (isNodeError(error) && error.code === "ENOENT") {
       throw new AudioDownloadError(
         "MISSING_AUDIO_DEPENDENCY",
-        "Required audio dependency plan.json does not exist.",
+        "Required audio dependency info.json does not exist.",
       );
     }
     throw error;
@@ -394,35 +385,42 @@ async function readPlan(workspacePath: string): Promise<unknown> {
   } catch {
     throw new AudioDownloadError(
       "INVALID_AUDIO_DEPENDENCY",
-      "Required audio dependency plan.json is not valid JSON.",
+      "Required audio dependency info.json is not valid JSON.",
     );
   }
 }
 
 function validatePlan(value: unknown): PlanInput {
   const root = asObject(value);
-  const rawTracks = Array.isArray(root?.tracks) ? root.tracks : undefined;
+  const think = asString(root?.think)?.trim();
+  const rawTrackIds = Array.isArray(root?.track_ids)
+    ? root.track_ids
+    : undefined;
 
-  if (rawTracks === undefined || rawTracks.length === 0) {
+  if (
+    root === undefined ||
+    !Object.hasOwn(root, "think") ||
+    !Object.hasOwn(root, "track_ids") ||
+    think === undefined ||
+    think.length === 0 ||
+    rawTrackIds === undefined ||
+    rawTrackIds.length === 0
+  ) {
     throw new AudioDownloadError(
       "INVALID_AUDIO_DEPENDENCY",
-      "plan.json must contain a non-empty tracks array.",
+      "info.json must contain a non-empty think and track_ids array.",
     );
   }
 
-  const tracks = rawTracks.map((value, index) => {
-    const track = asObject(value);
-    const id = asJsonId(track?.id);
-    const order = typeof track?.order === "number" ? track.order : undefined;
-
-    if (order === undefined || id === undefined) {
+  const tracks = rawTrackIds.map((value, index) => {
+    const id = asJsonId(value);
+    if (id === undefined) {
       throw new AudioDownloadError(
         "INVALID_AUDIO_DEPENDENCY",
-        `plan.json contains an invalid track at index ${index}.`,
+        `info.json contains an invalid track id at index ${index}.`,
       );
     }
-
-    return { order, id };
+    return { order: index + 1, id };
   });
 
   // Validate unique ids
@@ -430,18 +428,8 @@ function validatePlan(value: unknown): PlanInput {
   if (new Set(ids).size !== ids.length) {
     throw new AudioDownloadError(
       "INVALID_AUDIO_DEPENDENCY",
-      "plan.json contains duplicate track ids.",
+      "info.json contains duplicate track ids.",
     );
-  }
-
-  // Validate contiguous order (1-based)
-  for (const [index, track] of tracks.entries()) {
-    if (track.order !== index + 1) {
-      throw new AudioDownloadError(
-        "INVALID_AUDIO_DEPENDENCY",
-        `plan.json tracks must have contiguous 1-based order, expected ${index + 1} but got ${track.order}.`,
-      );
-    }
   }
 
   return { tracks: tracks as PlanTrack[] };

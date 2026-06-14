@@ -7,7 +7,6 @@ import { getWorkspace, type Workspace } from "./workspaces.js";
 
 const INFO_FILE = "info.json";
 const PLAYLIST_FILE = "playlist.json";
-const PLAN_FILE = "plan.json";
 const PLAN_SYSTEM_PROMPT = "plan.system.md";
 const PLAN_USER_PROMPT = "plan.user.md";
 const REQUIRED_USER_PROMPT_PLACEHOLDERS = [
@@ -40,11 +39,10 @@ export interface ProgramPlanResult {
   workspace: Workspace;
   path: string;
   trackCount: number;
-  theme: string;
+  think: string;
 }
 
 export interface GenerateProgramPlanOptions {
-  now?: () => Date;
   requestAi?: (messages: AiMessage[]) => Promise<string>;
   promptDirectory?: string;
 }
@@ -62,30 +60,9 @@ interface PlaylistInput {
   tracks: PlaylistTrack[];
 }
 
-interface AiPlanTrack {
-  id: JsonId;
-  selectionReason: string;
-  emotion: string;
-}
-
-interface AiEmotionalStage {
-  stage: string;
-  description: string;
-  trackIds: JsonId[];
-}
-
 interface AiProgramPlan {
-  theme: {
-    title: string;
-    description: string;
-  };
-  hostStyle: {
-    persona: string;
-    tone: string;
-    delivery: string;
-  };
-  emotionalArc: AiEmotionalStage[];
-  tracks: AiPlanTrack[];
+  think: string;
+  track_ids: JsonId[];
 }
 
 interface JsonObject {
@@ -165,38 +142,20 @@ export async function generateProgramPlan(
     playlist.tracks.map((track) => [canonicalId(track.id), track]),
   );
   const artifact = {
-    version: 1,
-    generatedAt: (options.now ?? (() => new Date()))().toISOString(),
-    sourcePlaylist: { id: playlist.id, name: playlist.name },
-    theme: aiPlan.theme,
-    hostStyle: aiPlan.hostStyle,
-    emotionalArc: aiPlan.emotionalArc.map((stage) => ({
-      ...stage,
-      trackIds: stage.trackIds.map(
-        (id) => tracksById.get(canonicalId(id))!.id,
-      ),
-    })),
-    tracks: aiPlan.tracks.map((selection, index) => {
-      const track = tracksById.get(canonicalId(selection.id))!;
-      return {
-        order: index + 1,
-        id: track.id,
-        title: track.title,
-        artists: track.artists,
-        album: track.album,
-        selectionReason: selection.selectionReason,
-        emotion: selection.emotion,
-      };
-    }),
+    ...info,
+    think: aiPlan.think,
+    track_ids: aiPlan.track_ids.map(
+      (id) => tracksById.get(canonicalId(id))!.id,
+    ),
   };
-  const artifactPath = path.join(workspace.path, PLAN_FILE);
-  await writeJsonAtomically(artifactPath, artifact);
+  const infoPath = path.join(workspace.path, INFO_FILE);
+  await writeJsonAtomically(infoPath, artifact);
 
   return {
     workspace,
-    path: artifactPath,
-    trackCount: artifact.tracks.length,
-    theme: artifact.theme.title,
+    path: infoPath,
+    trackCount: artifact.track_ids.length,
+    think: artifact.think,
   };
 }
 
@@ -335,29 +294,18 @@ function parseAiPlan(
   }
 
   const root = asObject(value);
-  const theme = asObject(root?.theme);
-  const hostStyle = asObject(root?.hostStyle);
-  const rawArc = Array.isArray(root?.emotionalArc)
-    ? root.emotionalArc
+  const think = asNonEmptyString(root?.think);
+  const rawTrackIds = Array.isArray(root?.track_ids)
+    ? root.track_ids
     : undefined;
-  const rawTracks = Array.isArray(root?.tracks) ? root.tracks : undefined;
-  const parsedTheme = {
-    title: asNonEmptyString(theme?.title),
-    description: asNonEmptyString(theme?.description),
-  };
-  const parsedHostStyle = {
-    persona: asNonEmptyString(hostStyle?.persona),
-    tone: asNonEmptyString(hostStyle?.tone),
-    delivery: asNonEmptyString(hostStyle?.delivery),
-  };
-
   if (
-    Object.values(parsedTheme).includes(undefined) ||
-    Object.values(parsedHostStyle).includes(undefined) ||
-    rawArc === undefined ||
-    rawArc.length === 0 ||
-    rawTracks === undefined ||
-    rawTracks.length !== count
+    root === undefined ||
+    Object.keys(root).length !== 2 ||
+    !Object.hasOwn(root, "think") ||
+    !Object.hasOwn(root, "track_ids") ||
+    think === undefined ||
+    rawTrackIds === undefined ||
+    rawTrackIds.length !== count
   ) {
     throw invalidAiResponse(
       "AI plan response is missing required fields or has the wrong track count.",
@@ -367,72 +315,20 @@ function parseAiPlan(
   const playlistIds = new Set(
     playlist.tracks.map((track) => canonicalId(track.id)),
   );
-  const tracks = rawTracks.map((value, index): AiPlanTrack => {
-    const track = asObject(value);
-    const id = asJsonId(track?.id);
-    const selectionReason = asNonEmptyString(track?.selectionReason);
-    const emotion = asNonEmptyString(track?.emotion);
-    if (
-      id === undefined ||
-      selectionReason === undefined ||
-      emotion === undefined ||
-      !playlistIds.has(canonicalId(id))
-    ) {
+  const trackIds = rawTrackIds.map((value, index) => {
+    const id = asJsonId(value);
+    if (id === undefined || !playlistIds.has(canonicalId(id))) {
       throw invalidAiResponse(
         `AI plan response contains an invalid selected track at index ${index}.`,
       );
     }
-    return { id, selectionReason, emotion };
+    return id;
   });
-  const selectedIds = tracks.map((track) => canonicalId(track.id));
+  const selectedIds = trackIds.map(canonicalId);
   if (new Set(selectedIds).size !== selectedIds.length) {
     throw invalidAiResponse("AI plan response contains duplicate selected tracks.");
   }
-
-  const emotionalArc = rawArc.map((value, index): AiEmotionalStage => {
-    const stage = asObject(value);
-    const stageName = asNonEmptyString(stage?.stage);
-    const description = asNonEmptyString(stage?.description);
-    const rawTrackIds = Array.isArray(stage?.trackIds)
-      ? stage.trackIds
-      : undefined;
-    const trackIds = rawTrackIds?.map(asJsonId);
-    if (
-      stageName === undefined ||
-      description === undefined ||
-      trackIds === undefined ||
-      trackIds.length === 0 ||
-      trackIds.some((id) => id === undefined)
-    ) {
-      throw invalidAiResponse(
-        `AI plan response contains an invalid emotional stage at index ${index}.`,
-      );
-    }
-    return {
-      stage: stageName,
-      description,
-      trackIds: trackIds as JsonId[],
-    };
-  });
-  const arcIds = emotionalArc.flatMap((stage) =>
-    stage.trackIds.map(canonicalId),
-  );
-  if (
-    arcIds.length !== selectedIds.length ||
-    new Set(arcIds).size !== arcIds.length ||
-    arcIds.some((id) => !selectedIds.includes(id))
-  ) {
-    throw invalidAiResponse(
-      "Emotional arc must reference every selected track exactly once.",
-    );
-  }
-
-  return {
-    theme: parsedTheme as AiProgramPlan["theme"],
-    hostStyle: parsedHostStyle as AiProgramPlan["hostStyle"],
-    emotionalArc,
-    tracks,
-  };
+  return { think, track_ids: trackIds };
 }
 
 function asObject(value: unknown): JsonObject | undefined {

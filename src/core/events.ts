@@ -26,60 +26,75 @@ export class EventGenerationError extends Error {
   }
 }
 
-export interface HostEvent {
-  type: "host";
+export interface HostAudioEvent {
+  type: "audio";
   id: string;
+  source: string;
+  role: "host";
   voiceDesignPrompt: string;
   text: string;
+  duckTo?: number;
+  duckFade?: number;
 }
 
-export interface PlayEvent {
-  type: "play";
-  id: string;
+export interface MainAudioEvent {
+  type: "audio";
+  source: string;
+  role: "main";
+  start?: number;
+  duration?: number;
+  volume?: number;
   fadeIn?: number;
   fadeOut?: number;
 }
 
-export interface BgmStartEvent {
-  type: "bgm";
+export interface EffectAudioEvent {
+  type: "audio";
+  source: string;
+  role: "effect";
+  start?: number;
+  duration?: number;
+  volume?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+export interface BedAudioStartEvent {
+  type: "audio";
   action: "start";
-  name: string;
+  source: string;
+  role: "bed";
+  start?: number;
+  duration?: number;
   volume?: number;
   fadeIn?: number;
   fadeOut?: number;
 }
 
-export interface BgmStopEvent {
-  type: "bgm";
+export interface BedAudioStopEvent {
+  type: "audio";
   action: "stop";
-  fadeOut?: number;
+  role: "bed";
 }
 
-export interface SfxEvent {
-  type: "sfx";
-  name: string;
-  volume?: number;
-}
+export type AudioEvent =
+  | HostAudioEvent
+  | MainAudioEvent
+  | EffectAudioEvent
+  | BedAudioStartEvent
+  | BedAudioStopEvent;
 
 export interface PauseEvent {
   type: "pause";
   duration: number;
 }
 
-export interface TransitionEvent {
-  type: "transition";
-  transitionType: "soft" | "fade" | "radio" | "whoosh" | "silence" | "cut";
+export interface CrossfadeEvent {
+  type: "crossfade";
   duration: number;
 }
 
-export type RadioEvent =
-  | HostEvent
-  | PlayEvent
-  | BgmStartEvent
-  | BgmStopEvent
-  | SfxEvent
-  | PauseEvent
-  | TransitionEvent;
+export type RadioEvent = AudioEvent | PauseEvent | CrossfadeEvent;
 
 export interface ProgramEventsResult {
   workspace: Workspace;
@@ -106,59 +121,37 @@ export function parseRadioEvents(scriptText: string): RadioEvent[] {
 
   let hostIndex = 0;
   return sourceEvents.map((event): RadioEvent => {
-    switch (event.type) {
-      case "host":
-        hostIndex += 1;
-        return {
-          type: "host",
-          id: `host-${String(hostIndex).padStart(3, "0")}`,
-          voiceDesignPrompt: event.voiceDesignPrompt,
-          text: event.text,
-        };
-      case "play":
-        return compact({
-          type: "play",
-          id: event.id,
-          fadeIn: event.fadeIn,
-          fadeOut: event.fadeOut,
-        });
-      case "bgm":
-        return event.action === "start"
-          ? compact({
-              type: "bgm",
-              action: "start",
-              name: event.name,
-              volume: event.volume,
-              fadeIn: event.fadeIn,
-              fadeOut: event.fadeOut,
-            })
-          : compact({
-              type: "bgm",
-              action: "stop",
-              fadeOut: event.fadeOut,
-            });
-      case "sfx":
-        return compact({
-          type: "sfx",
-          name: event.name,
-          volume: event.volume,
-        });
-      case "pause":
-        return { type: "pause", duration: event.duration };
-      case "transition":
-        return {
-          type: "transition",
-          transitionType: event.transitionType,
-          duration: event.duration,
-        };
+    if (event.type === "host") {
+      hostIndex += 1;
+      return compact({
+        type: "audio" as const,
+        id: `host-${String(hostIndex).padStart(3, "0")}`,
+        source: "",
+        role: "host" as const,
+        voiceDesignPrompt: event.voiceDesignPrompt,
+        text: event.text,
+        duckTo: event.duckTo,
+        duckFade: event.duckFade,
+      });
     }
+    if (event.type === "pause" || event.type === "crossfade") {
+      return { type: event.type, duration: event.duration };
+    }
+    if (event.role === "bed" && event.action === "stop") {
+      return { type: "audio", action: "stop", role: "bed" };
+    }
+    return compact({
+      type: "audio" as const,
+      action: event.action,
+      source: event.source!,
+      role: event.role,
+      start: event.start,
+      duration: event.duration,
+      volume: event.volume,
+      fadeIn: event.fadeIn,
+      fadeOut: event.fadeOut,
+    }) as RadioEvent;
   });
-}
-
-function compact<T extends object>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, field]) => field !== undefined),
-  ) as T;
 }
 
 export async function generateProgramEvents(
@@ -188,9 +181,19 @@ export async function generateProgramEvents(
     workspace,
     path: artifactPath,
     eventCount: events.length,
-    hostCount: events.filter((event) => event.type === "host").length,
-    playCount: events.filter((event) => event.type === "play").length,
+    hostCount: events.filter(
+      (event) => event.type === "audio" && event.role === "host",
+    ).length,
+    playCount: events.filter(
+      (event) => event.type === "audio" && event.role === "main",
+    ).length,
   };
+}
+
+function compact<T extends object>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, field]) => field !== undefined),
+  ) as T;
 }
 
 async function writeJsonAtomically(filePath: string, value: unknown): Promise<void> {

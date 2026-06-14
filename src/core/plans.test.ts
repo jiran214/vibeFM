@@ -87,47 +87,23 @@ async function createFixture() {
 
 function validAiResponse() {
   return JSON.stringify({
-    theme: {
-      title: "After Midnight",
-      description: "From restlessness to calm.",
-    },
-    hostStyle: {
-      persona: "A thoughtful late-night companion",
-      tone: "Warm and restrained",
-      delivery: "Slow with intentional pauses",
-    },
-    emotionalArc: [
-      {
-        stage: "Opening",
-        description: "Settle into the night",
-        trackIds: [2],
-      },
-      {
-        stage: "Landing",
-        description: "Arrive at calm",
-        trackIds: [1],
-      },
-    ],
-    tracks: [
-      { id: 2, selectionReason: "A spacious opening", emotion: "Reflective" },
-      { id: 1, selectionReason: "A gentle resolution", emotion: "Calm" },
-    ],
+    think: "从城市夜行的躁动逐步落到独处后的平静，先铺开空间感，再温柔收束。",
+    track_ids: [2, 1],
   });
 }
 
-test("generateProgramPlan compresses inputs and writes an enriched plan", async () => {
+test("generateProgramPlan compresses inputs and writes only think and track_ids", async () => {
   const { baseDirectory, workspace } = await createFixture();
   const requests: AiMessage[][] = [];
 
   const result = await generateProgramPlan("night-radio", 2, baseDirectory, {
-    now: () => new Date("2026-06-13T12:00:00.000Z"),
     requestAi: async (messages) => {
       requests.push(messages);
       return validAiResponse();
     },
   });
 
-  assert.equal(result.path, path.join(workspace.path, "plan.json"));
+  assert.equal(result.path, path.join(workspace.path, "info.json"));
   assert.equal(result.trackCount, 2);
   assert.equal(requests.length, 1);
   assert.equal(requests[0][0].role, "system");
@@ -144,18 +120,10 @@ test("generateProgramPlan compresses inputs and writes an enriched plan", async 
   );
 
   const plan = JSON.parse(await readFile(result.path, "utf8"));
-  assert.equal(plan.version, 1);
-  assert.equal(plan.generatedAt, "2026-06-13T12:00:00.000Z");
-  assert.deepEqual(plan.sourcePlaylist, { id: 100, name: "Midnight Radio" });
-  assert.deepEqual(plan.tracks[0], {
-    order: 1,
-    id: 2,
-    title: "Second Song",
-    artists: ["Second Artist", "Guest Artist"],
-    album: "Second Album",
-    selectionReason: "A spacious opening",
-    emotion: "Reflective",
-  });
+  assert.equal(plan.prompt, "适合深夜独处、情绪逐渐平静的节目");
+  assert.equal(plan.language, "zh-CN");
+  assert.equal(plan.think, "从城市夜行的躁动逐步落到独处后的平静，先铺开空间感，再温柔收束。");
+  assert.deepEqual(plan.track_ids, [2, 1]);
 });
 
 test("generateProgramPlan rejects a count larger than the playlist", async () => {
@@ -190,10 +158,10 @@ test("generateProgramPlan reports a missing dependency before requesting AI", as
   assert.equal(requested, false);
 });
 
-test("generateProgramPlan rejects invalid AI JSON without replacing an existing plan", async () => {
+test("generateProgramPlan rejects invalid AI JSON without replacing an existing info", async () => {
   const { baseDirectory, workspace } = await createFixture();
-  const planPath = path.join(workspace.path, "plan.json");
-  await writeFile(planPath, "old plan\n", "utf8");
+  const infoPath = path.join(workspace.path, "info.json");
+  const originalInfo = await readFile(infoPath, "utf8");
 
   await assert.rejects(
     generateProgramPlan("night-radio", 2, baseDirectory, {
@@ -203,32 +171,16 @@ test("generateProgramPlan rejects invalid AI JSON without replacing an existing 
       error instanceof PlanGenerationError &&
       error.code === "INVALID_AI_PLAN_RESPONSE",
   );
-  assert.equal(await readFile(planPath, "utf8"), "old plan\n");
+  assert.equal(await readFile(infoPath, "utf8"), originalInfo);
 });
 
-test("generateProgramPlan rejects duplicate, unknown, or incomplete song selections", async () => {
+test("generateProgramPlan rejects duplicate, unknown, wrong-count, or extra plan fields", async () => {
   const { baseDirectory } = await createFixture();
   const invalidResponses = [
-    {
-      ...JSON.parse(validAiResponse()),
-      tracks: [
-        { id: 1, selectionReason: "Reason", emotion: "Calm" },
-        { id: 1, selectionReason: "Reason", emotion: "Calm" },
-      ],
-    },
-    {
-      ...JSON.parse(validAiResponse()),
-      tracks: [
-        { id: 1, selectionReason: "Reason", emotion: "Calm" },
-        { id: 999, selectionReason: "Reason", emotion: "Calm" },
-      ],
-    },
-    {
-      ...JSON.parse(validAiResponse()),
-      emotionalArc: [
-        { stage: "Only", description: "Incomplete", trackIds: [2] },
-      ],
-    },
+    { think: "Reason", track_ids: [1, 1] },
+    { think: "Reason", track_ids: [1, 999] },
+    { think: "Reason", track_ids: [1] },
+    { think: "Reason", track_ids: [2, 1], theme: "extra" },
   ];
 
   for (const response of invalidResponses) {

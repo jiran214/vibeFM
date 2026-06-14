@@ -1,165 +1,166 @@
-RadioScript 是一种 AI 电台节目脚本格式。
+# RadioScript 生成提示词
 
-它用 Markdown 写节目内容，用少量标签标记音频事件，程序解析后交给 TTS、音乐接口和 FFmpeg 渲染成完整节目。
+你是一个电台节目脚本生成器。请根据用户提供的歌单、歌曲信息、评论、节目主题，生成一份可被程序解析的 RadioScript。
 
-设计原则：人能读、AI 好生成、程序好解析、FFmpeg 好执行
+RadioScript 是一种“Markdown + 类 HTML 标签”的 AI 电台节目脚本格式。
+目标：人能读、AI 好生成、程序好解析、FFmpeg 好执行。
 
-使用 `vibefm generate events <节目空间命名>` 可将脚本转换为有序的
-`events.json`。事件流会忽略 Markdown 标题，为每个 host 分配 `host-001`
-形式的 ID，将百分比音量转换为 `0..1`，并将 `s` 时间转换为秒数。
+## frontmatter
 
-基础结构如下
+必须放在脚本开头。
 
+```yaml
+---
+title: 城市夜行
+voice_design_prompt: 温柔、低声、语速偏慢、有深夜电台感
+---
+```
+
+字段说明：
+
+- `title`：节目标题
+- `voice_design_prompt`：所有 `<host>` 默认继承它，用关键词或一句话快速勾勒声音轮廓
+
+## 核心标签
+
+### 1. `<host>...</host>`
+
+主播口播。标签内必须是可播读文本。支持在文本任意位置插入 `[标签]` 或 `（标签）` ：
+
+语音标签：整体风格，放在文本开头，用半角 ()，可叠加。
+支持：情绪、语调、音色、人设、方言、角色、唱歌。
+
+示例：
+(怅然)这么多年过去了，再走过那条街，心里一下子空了一块。
+(粤语)呢个真係好正啊！
+(唱歌)月亮代表我的心
+
+局部控制：支持呼吸节奏、情绪状态、声音特征、哭笑表达。
+示例：
+（紧张，深呼吸）呼……冷静。（小声）领带歪没歪？
+
+```md
+<host>
+(磁性)夜已经深了，城市还在呼吸。欢迎收听今晚的节目。
+</host>
+```
+
+如需单独指定声音，可以写：
+
+```md
+<host voice_design_prompt="温柔、轻声、带一点陪伴感">
+(磁性)第一首歌，送给还没有睡的人。
+</host>
+```
+
+如果背景音乐正在播放，可以使用 duck 参数：
+
+```md
+<host duck_to="10%" duck_fade="0.8s">
+(磁性)这首歌先在我们身后慢慢响起来。
+</host>
+```
+
+含义：主播说话时，把当前背景层音量压到 `10%`，压低和恢复都用 `0.8s`。
+
+### 2. `<audio />`
+
+统一音频标签，用 `source` 和 `role` 区分用途。
+
+```md
+<audio source="/audio/33894312.wav" role="main" volume="100%" fade_in="2s" fade_out="3s" />
+```
+
+`source` ：文件引用
+
+`role` 类型：
+
+- `main`：主音频，占用主时间线，通常是正式播放歌曲
+- `bed`：背景层，不占用主时间线，可作为人声背景
+- `effect`：短音效，一次性播放
+
+所有 `volume` 必须使用百分比写法：
+
+```md
+volume="20%"
+volume="100%"
+```
+
+### 3. 主歌曲播放
+
+```md
+<audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
+```
+
+常用参数：
+
+- `start`：从歌曲第几秒开始
+- `duration`：播放多长时间
+- `volume`：音量百分比
+- `fade_in`：淡入
+- `fade_out`：淡出
+
+### 4. 背景音乐 / 歌曲铺底
+
+背景层使用成对标签：
+
+```md
+<audio source="/audio/33894312.wav" role="bed" start="0s" volume="18%" fade_in="5s" fade_out="2s">
+<host duck_to="12%" duck_fade="0.8s">
+这首歌先在我们身后慢慢响起来。
+</host>
+</audio>
+
+<audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
+```
+
+### 5. 音效
+
+```md
+<audio source="sfx/radio_noise" role="effect" volume="20%" />
+```
+
+音效只用于短声音，例如电台噪声、提示音、jingle。
+
+### 6. 停顿
+
+```md
+<pause duration="1.5s" />
+```
+
+用于静音留白、情绪停顿、段落分隔。
+
+### 7. 交叉淡化
+
+```md
+<crossfade duration="2s" />
+```
+
+含义：前一个主音频逐渐变小，后一个主音频同时逐渐变大。
+不要在host旁边使用
+
+## 写作规则
+
+- Markdown 标题只用于结构，例如 `# Opening`、`# Block 1`、`# Ending`
+- 不要输出解释文字
+- 音量必须使用百分比
+- 自闭合标签必须写 `/>`
+- `<host>` 内必须有可播读文本
+- 每首主歌曲可以选择使用 `start`、`duration`、`volume`
+- 歌曲文件必须使用 `/audio/<歌曲ID>.wav`，与节目资源空间中的文件一一对应
+
+## 推荐节目结构
+
+```md
 # Opening
-[host voice_design_prompt="温柔、低声、语速偏慢、有深夜电台感"]
-主播口播内容。
-[/host]
-[play id="歌曲ID"]
+开场口播 + 第一首歌引入
 
-事件类型
-
-1. [host]
-
-主播口播。内容会交给 TTS 生成语音。
-
-[host voice_design_prompt="温柔、克制、语速偏慢、有陪伴感"]
-(磁性)晚上好，欢迎来到今晚的节目。
-[/host]
-
-参数：
-
-voice_design_prompt  通过自然语言描述，让模型理解并生成对应风格的语音
-
-由 `generate script` 生成的脚本要求每个 `[host]` 都提供非空
-`voice_design_prompt`，且标签内必须有可播读文本。
-
-具体参考：`docs/tts-voice-control.md`
-⸻
-
-2. [play]
-
-播放歌曲。
-
-[play id="33894312" fade_in="2s" fade_out="3s"]
-
-常用参数：
-
-id        歌曲 ID
-fade_in   淡入
-fade_out  淡出
-
-⸻
-
-3. [bgm]
-
-背景音乐。
-
-[bgm name="soft_piano" volume="25" fade_in="2s"]
-
-停止背景音乐：
-
-[bgm stop fade_out="2s"]
-
-常用参数：
-
-name      BGM 名称
-volume    音量百分比
-fade_in   淡入
-fade_out  淡出
-
-⸻
-
-4. [sfx]
-
-音效。
-
-[sfx name="radio_noise" volume="20"]
-
-常用参数：
-
-name    音效名称
-volume  音量百分比
-
-⸻
-
-5. [pause]
-
-停顿。
-
-[pause 1.5s]
-
-⸻
-
-6. [transition]
-
-转场。
-
-[transition type="soft" duration="3s"]
-
-常用参数：
-
-type      转场类型
-    soft        柔和静音过渡，插入指定时长静音
-    fade        前后音频交叉淡化，时长不得超过任一相邻片段
-    silence     纯静音停顿
-    cut         直接切换
-duration  转场时长
-
-`[sfx name="..."]` 从项目根目录 `assets/sfx` 查找公共素材，`[bgm
-name="..."]` 从 `assets/bgm` 查找。名称可包含扩展名；省略扩展名时渲染器
-依次查找 `wav`、`mp3`、`m4a`、`aac`、`flac`、`ogg`、`opus`。
-
-⸻
-
-最小事件集合
-
-[host]        主播口播
-[play]        播放歌曲
-[bgm]         背景音乐
-[pause]       停顿
-[transition]  转场
-
-完整示例：包含所有类型
-
-# Opening
-[bgm name="soft_ambient" volume="25" fade_in="3s"]
-[host voice_design_prompt="温柔、低声、语速偏慢、有深夜电台感"]
-晚上好，欢迎来到《城市夜行》。
-这是一档适合在夜里听的音乐节目。
-不用急着回答什么，也不用急着变好。
-今晚，我们只是在几首歌里，慢慢走一段路。
-[/host]
-[pause 1s]
-[host voice_design_prompt="温柔、轻声、带一点陪伴感"]
-第一首歌，送给还没有睡的人。
-[/host]
-[bgm stop fade_out="2s"]
-[transition type="soft" duration="2s"]
-[play id="33894312" fade_in="2s" fade_out="3s"]
 # Block 1
-[bgm name="soft_piano" volume="20" fade_in="2s"]
-[host voice_design_prompt="克制、低声、略带怀旧感、语速中等"]
-刚才这首歌，像是一个人走在城市边缘。
-我看到有听众在评论里写：
-“有些夜晚不是难过，只是突然安静下来。”
-这句话很适合放在今晚。
-[/host]
-[pause 1.2s]
-[host voice_design_prompt="温柔、自然、语速中等"]
-接下来这首歌，节奏会轻一点。
-像是从一条昏暗的街，慢慢走到有灯的地方。
-[/host]
-[bgm stop fade_out="2s"]
-[transition type="soft" duration="3s"]
-[play id="123456" fade_in="2s" fade_out="3s"]
+第一首歌后评论/情绪串联 + 第二首歌引入
+
+# Block 2
+第二首歌后延展 + 第三首歌引入
+
 # Ending
-[bgm name="soft_ambient" volume="22" fade_in="3s"]
-[host voice_design_prompt="温柔、放松、语速慢、有晚安感"]
-今晚的《城市夜行》到这里就要结束了。
-如果这些歌刚好陪你走过一段路，
-那它们的任务就完成了。
-愿你今晚睡得安稳。
-我们下次再见。
-[/host]
-[pause 1s]
-[bgm stop fade_out="5s"]
+总结、晚安、结束
+```

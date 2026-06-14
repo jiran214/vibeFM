@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -13,25 +13,8 @@ async function createTempDirectory(): Promise<string> {
 
 function validPlan() {
   return {
-    version: 1,
-    generatedAt: "2026-06-13T10:00:00.000Z",
-    sourcePlaylist: { id: 6792103822, name: "Test Playlist" },
-    theme: { title: "Test Theme", description: "desc" },
-    hostStyle: { persona: "p", tone: "t", delivery: "d" },
-    emotionalArc: [
-      { stage: "intro", description: "d", trackIds: [5257138] },
-    ],
-    tracks: [
-      {
-        order: 1,
-        id: 5257138,
-        title: "Roof",
-        artists: ["Jay"],
-        album: "Duets",
-        selectionReason: "good",
-        emotion: "happy",
-      },
-    ],
+    think: "先明亮，再收束。",
+    track_ids: [5257138],
   };
 }
 
@@ -39,9 +22,10 @@ async function writePlan(
   workspacePath: string,
   plan: unknown = validPlan(),
 ): Promise<string> {
-  const planPath = path.join(workspacePath, "plan.json");
-  await writeFile(planPath, JSON.stringify(plan, null, 2));
-  return planPath;
+  const infoPath = path.join(workspacePath, "info.json");
+  const existing = JSON.parse(await readFile(infoPath, "utf8"));
+  await writeFile(infoPath, JSON.stringify({ ...existing, ...plan }, null, 2));
+  return infoPath;
 }
 
 // --- Slice 2: weapi encryption ---
@@ -302,13 +286,7 @@ test("generateAudio writes manifest.json with track order and status", async () 
   const baseDirectory = await createTempDirectory();
   const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
   const plan = validPlan();
-  plan.tracks = [
-    { ...plan.tracks[0], order: 1, id: 5257138, title: "Roof" },
-    { ...plan.tracks[0], order: 2, id: 5257139, title: "Second" },
-  ];
-  plan.emotionalArc = [
-    { stage: "s", description: "d", trackIds: [5257138, 5257139] },
-  ];
+  plan.track_ids = [5257138, 5257139];
   await writePlan(workspace.path, plan);
 
   const result = await generateAudio("demo", baseDirectory, {
@@ -451,11 +429,12 @@ test("generateAudio re-downloads when --force is set", async () => {
   assert.equal(fileContent.toString(), "new-data");
 });
 
-// --- Slice 1: plan.json validation ---
+// --- Slice 1: plan validation ---
 
-test("generateAudio rejects missing plan.json", async () => {
+test("generateAudio rejects missing info.json", async () => {
   const baseDirectory = await createTempDirectory();
-  await createWorkspace("demo", "test prompt", baseDirectory);
+  const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
+  await rm(path.join(workspace.path, "info.json"));
 
   await assert.rejects(
     generateAudio("demo", baseDirectory),
@@ -465,11 +444,11 @@ test("generateAudio rejects missing plan.json", async () => {
   );
 });
 
-test("generateAudio rejects plan.json with empty tracks", async () => {
+test("generateAudio rejects info.json with empty track_ids", async () => {
   const baseDirectory = await createTempDirectory();
   const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
   const plan = validPlan();
-  plan.tracks = [];
+  plan.track_ids = [];
   await writePlan(workspace.path, plan);
 
   await assert.rejects(
@@ -480,17 +459,11 @@ test("generateAudio rejects plan.json with empty tracks", async () => {
   );
 });
 
-test("generateAudio rejects plan.json with duplicate track ids", async () => {
+test("generateAudio rejects info.json with duplicate track_ids", async () => {
   const baseDirectory = await createTempDirectory();
   const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
   const plan = validPlan();
-  plan.tracks = [
-    { ...plan.tracks[0], order: 1 },
-    { ...plan.tracks[0], order: 2, id: 5257138 },
-  ];
-  plan.emotionalArc = [
-    { stage: "s1", description: "d", trackIds: [5257138, 5257138] },
-  ];
+  plan.track_ids = [5257138, 5257138];
   await writePlan(workspace.path, plan);
 
   await assert.rejects(
@@ -501,18 +474,10 @@ test("generateAudio rejects plan.json with duplicate track ids", async () => {
   );
 });
 
-test("generateAudio rejects plan.json with non-contiguous order", async () => {
+test("generateAudio rejects info.json missing think or track_ids", async () => {
   const baseDirectory = await createTempDirectory();
   const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
-  const plan = validPlan();
-  plan.tracks = [
-    { ...plan.tracks[0], order: 1 },
-    { ...plan.tracks[0], order: 3, id: 5257139 },
-  ];
-  plan.emotionalArc = [
-    { stage: "s1", description: "d", trackIds: [5257138, 5257139] },
-  ];
-  await writePlan(workspace.path, plan);
+  await writePlan(workspace.path, { prompt: "test", think: "reason" });
 
   await assert.rejects(
     generateAudio("demo", baseDirectory),

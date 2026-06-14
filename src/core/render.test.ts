@@ -31,18 +31,22 @@ async function createRenderWorkspace(): Promise<{
 
 async function writeCompleteDependencies(workspaceDirectory: string): Promise<void> {
   const events = [
-    { type: "bgm", action: "start", name: "bed", volume: 0.2, fadeIn: 1 },
+    { type: "audio", action: "start", source: "bgm/bed", role: "bed", volume: 0.2, fadeIn: 1, fadeOut: 1 },
     {
-      type: "host",
+      type: "audio",
       id: "host-001",
+      source: "/speech/host-001.wav",
+      role: "host",
       voiceDesignPrompt: "warm",
       text: "Welcome.",
+      duckTo: 0.1,
+      duckFade: 0.5,
     },
-    { type: "bgm", action: "stop", fadeOut: 1 },
-    { type: "transition", transitionType: "fade", duration: 2 },
-    { type: "play", id: "123", fadeIn: 1, fadeOut: 2 },
+    { type: "crossfade", duration: 2 },
+    { type: "audio", source: "/audio/123.wav", role: "main", fadeIn: 1, fadeOut: 2 },
+    { type: "audio", action: "stop", role: "bed" },
     { type: "pause", duration: 1 },
-    { type: "sfx", name: "chime", volume: 0.5 },
+    { type: "audio", source: "sfx/chime", role: "effect", volume: 0.5 },
   ];
   await Promise.all([
     writeFile(
@@ -121,6 +125,8 @@ describe("generateProgramRender", () => {
     assert.match(filterGraph, /afade=t=out/u);
     assert.match(filterGraph, /acrossfade=d=2/u);
     assert.match(filterGraph, /amix=inputs=2:duration=first/u);
+    assert.match(filterGraph, /eval=frame/u);
+    assert.match(filterGraph, /\(t-4\)\/0\.5/u);
     assert.match(filterGraph, /loudnorm=I=-16:LRA=11:TP=-1\.5/u);
 
     const manifest = JSON.parse(await readFile(result.manifest, "utf8"));

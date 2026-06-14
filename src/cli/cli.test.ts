@@ -178,7 +178,7 @@ test("generate plan command shows a blocking notice and prints JSON", async () =
     baseDirectory,
     ".vibefm",
     "morning-show",
-    "plan.json",
+    "info.json",
   );
 
   const { result, stdout, stderr } = await captureOutput(() =>
@@ -197,7 +197,7 @@ test("generate plan command shows a blocking notice and prints JSON", async () =
             },
             path: planPath,
             trackCount: count,
-            theme: "Morning Light",
+            think: "从清晨的轻盈逐步推进到明亮。",
           } satisfies ProgramPlanResult;
         },
       },
@@ -217,7 +217,7 @@ test("generate plan command shows a blocking notice and prints JSON", async () =
       plan: {
         path: planPath,
         trackCount: 2,
-        theme: "Morning Light",
+        think: "从清晨的轻盈逐步推进到明亮。",
       },
     },
   });
@@ -739,7 +739,7 @@ test("status command shows completed stages when files exist", async () => {
 
   const workspaceDir = path.join(baseDirectory, ".vibefm", "morning-show");
   await writeFile(path.join(workspaceDir, "playlist.json"), "{}");
-  await writeFile(path.join(workspaceDir, "plan.json"), "{}");
+  await writeFile(path.join(workspaceDir, "info.json"), JSON.stringify({ prompt: "test", think: "reason", track_ids: [1] }));
   await mkdir(path.join(workspaceDir, "audio"), { recursive: true });
   await writeFile(path.join(workspaceDir, "audio", "manifest.json"), "{}");
 
@@ -767,7 +767,7 @@ test("status command shows all completed when all artifacts exist", async () => 
 
   const workspaceDir = path.join(baseDirectory, ".vibefm", "morning-show");
   await writeFile(path.join(workspaceDir, "playlist.json"), "{}");
-  await writeFile(path.join(workspaceDir, "plan.json"), "{}");
+  await writeFile(path.join(workspaceDir, "info.json"), JSON.stringify({ prompt: "test", think: "reason", track_ids: [1] }));
   await writeFile(path.join(workspaceDir, "script.md"), "# Script");
   await writeFile(path.join(workspaceDir, "events.json"), "[]");
   await mkdir(path.join(workspaceDir, "audio"), { recursive: true });
