@@ -37,17 +37,20 @@ AI智能搜索歌单，挑选歌曲，制作电台节目
 - `docs/技术决策.md` （新增功能请主动修改文档内容）
 - `docs/cli.md` 命令说明
 - `docs/dsl.md` 电台节目脚本规则
+- `logs` AI生成日志
 
 # 支持cli命令
 npm run cli -- cookie
-npm run cli -- create demo 为情所困
+npm run cli -- create demo --prompt 为情所困
 npm run cli -- delete demo
+npm run cli -- import segu 'https://music.163.com/playlist?id=7421536874&uct2=U2FsdGVkX18WnNMZOw/O3afBTzBE50bCzs6EtnNtr9U='
 npm run cli -- generate plan demo --count 5
 npm run cli -- generate script demo
 npm run cli -- generate events demo
 npm run cli -- generate audio demo
 npm run cli -- generate speech demo
 npm run cli -- generate render demo
+npm run cli -- generate all demo --count 5 --quality exhigh --voice 茉莉
 
 # 注意
 - 开发debug必须使用tdd

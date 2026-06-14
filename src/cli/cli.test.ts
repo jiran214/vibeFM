@@ -16,6 +16,7 @@ import {
   SpeechGenerationError,
   type SpeechGenerationResult,
 } from "../core/speech.js";
+import type { WorkflowResult } from "../core/workflow.js";
 import { runCli } from "./run.js";
 
 async function captureStdout<T>(callback: () => Promise<T>) {
@@ -586,6 +587,122 @@ test("generate render command preserves render error codes", async () => {
     code: "MISSING_RENDER_DEPENDENCY",
     message: "Required render dependency events.json does not exist.",
   });
+});
+
+test("generate all command forwards stage options and prints progress", async () => {
+  const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-cli-"));
+  const workspacePath = path.join(baseDirectory, ".vibefm", "morning-show");
+  const outputPath = path.join(workspacePath, "output", "program.mp3");
+
+  const { result, stdout, stderr } = await captureOutput(() =>
+    runCli(
+      [
+        "generate",
+        "all",
+        "morning-show",
+        "--count",
+        "5",
+        "--quality",
+        "exhigh",
+        "--voice",
+        "茉莉",
+        "--force",
+      ],
+      baseDirectory,
+      {
+        generateAll: async (name, directory, options) => {
+          assert.equal(name, "morning-show");
+          assert.equal(directory, baseDirectory);
+          assert.equal(options.count, 5);
+          assert.equal(options.quality, "exhigh");
+          assert.equal(options.voice, "茉莉");
+          assert.equal(options.force, true);
+          options.onProgress?.({
+            stage: "plan",
+            index: 0,
+            total: 6,
+            status: "started",
+          });
+          options.onProgress?.({
+            stage: "plan",
+            index: 0,
+            total: 6,
+            status: "completed",
+          });
+          return {
+            workspace: { name, path: workspacePath },
+            output: outputPath,
+            manifest: path.join(workspacePath, "output", "manifest.json"),
+            stages: [
+              { stage: "plan", status: "completed" },
+              { stage: "script", status: "completed" },
+              { stage: "events", status: "completed" },
+              { stage: "audio", status: "completed" },
+              { stage: "speech", status: "completed" },
+              { stage: "render", status: "completed" },
+            ],
+          } satisfies WorkflowResult;
+        },
+      },
+    ),
+  );
+
+  assert.equal(result, 0);
+  assert.match(stderr, /\[------------------------\] 0\/6  节目策划  进行中/u);
+  assert.match(stderr, /\[====--------------------\] 1\/6  节目策划  已完成/u);
+  assert.deepEqual(JSON.parse(stdout), {
+    success: true,
+    data: {
+      action: "generate-all",
+      workspace: { name: "morning-show", path: workspacePath },
+      stages: [
+        { stage: "plan", status: "completed" },
+        { stage: "script", status: "completed" },
+        { stage: "events", status: "completed" },
+        { stage: "audio", status: "completed" },
+        { stage: "speech", status: "completed" },
+        { stage: "render", status: "completed" },
+      ],
+      render: {
+        path: outputPath,
+        manifest: path.join(workspacePath, "output", "manifest.json"),
+      },
+    },
+  });
+});
+
+test("generate all command accepts resume without count", async () => {
+  const { result, output } = await captureStdout(() =>
+    runCli(["generate", "all", "morning-show"], process.cwd(), {
+      generateAll: async (_name, _directory, options) => {
+        assert.equal(options.count, undefined);
+        return {
+          workspace: { name: "morning-show", path: "" },
+          output: "output/program.mp3",
+          manifest: "output/manifest.json",
+          stages: [],
+        } satisfies WorkflowResult;
+      },
+    }),
+  );
+
+  assert.equal(result, 0);
+  assert.equal(JSON.parse(output).data.action, "generate-all");
+});
+
+test("generate all command rejects invalid stage options", async () => {
+  for (const args of [
+    ["generate", "all"],
+    ["generate", "all", "demo", "extra"],
+    ["generate", "all", "demo", "--count", "0"],
+    ["generate", "all", "demo", "--quality", "invalid"],
+    ["generate", "all", "demo", "--voice", "invalid"],
+    ["generate", "all", "demo", "--unknown"],
+  ]) {
+    const { result, output } = await captureStdout(() => runCli(args));
+    assert.equal(result, 1);
+    assert.equal(JSON.parse(output).error.code, "INVALID_ARGUMENTS");
+  }
 });
 
 test("status command shows all stages pending for a fresh workspace", async () => {

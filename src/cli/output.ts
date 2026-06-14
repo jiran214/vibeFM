@@ -5,6 +5,7 @@ import { PlanGenerationError } from "../core/plans.js";
 import { ProgramRenderError } from "../core/render.js";
 import { ScriptGenerationError } from "../core/scripts.js";
 import { SpeechGenerationError } from "../core/speech.js";
+import { WorkflowError } from "../core/workflow.js";
 import { WorkspaceError } from "../core/workspaces.js";
 import { PlaylistImportError } from "../core/playlists.js";
 
@@ -62,6 +63,13 @@ export function toCliFailure(error: unknown): CliFailure {
   }
 
   if (error instanceof ProgramRenderError) {
+    return {
+      success: false,
+      error: { code: error.code, message: error.message },
+    };
+  }
+
+  if (error instanceof WorkflowError) {
     return {
       success: false,
       error: { code: error.code, message: error.message },

@@ -368,9 +368,9 @@ function validateRadioScript(text: string, plan: ProgramPlanInput): string {
   }
   const firstPlayLine = script.plays[0].line;
   const lastPlayLine = script.plays[script.plays.length - 1].line;
-  if (script.openingLine >= firstPlayLine || script.endingLine <= lastPlayLine) {
+  if (script.openingLine >= firstPlayLine) {
     throw invalidAiResponse(
-      "AI script response must place Opening before all songs and Ending after all songs.",
+      "AI script response must place Opening before all songs",
     );
   }
   if (!script.hosts.some((host) => host.endLine < firstPlayLine)) {

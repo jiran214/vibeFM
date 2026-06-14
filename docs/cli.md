@@ -374,6 +374,7 @@ vibefm status <节目空间命名>
 playlist    completed
 plan        completed
 script      completed
+events      completed
 audio       pending
 speech      pending
 render      pending
@@ -382,10 +383,47 @@ render      pending
 ### 12. 一次性完成全部工作流
 
 ```bash
-vibefm generate all <节目空间命名>
+vibefm generate all <节目空间命名> [--count <number>] [--quality <level>] [--voice <voice>] [--force]
 ```
 
-- 工作流的每一步骤的参数，也暴露在这条命令
-- 在终端有进度条输出，显示当前在哪一步骤，要美观好看
-- 当中断某一步骤，下次运行自动从中断点继续
+按以下顺序一次性执行完整生成流程：
 
+```text
+plan -> script -> events -> audio -> speech -> render
+```
+
+参数与单阶段命令保持一致：
+
+- `--count <number>`：策划选择的歌曲数量。仅当 `plan` 尚未完成、需要实际执行时必填
+- `--quality <level>`：歌曲音质，默认 `standard`
+- `--voice <voice>`：主播预设音色，默认 `冰糖`
+- `--force`：从 `audio` 阶段开始强制重做歌曲音频、主播语音和最终合成
+
+工作流将连续完成的前置阶段标记为跳过，从第一个未完成阶段继续执行，并重做其
+所有下游阶段，避免上游更新后继续使用旧的下游产物。各阶段以原子生成的最终产物
+作为完成标记；音频和语音阶段内部仍会复用已经生成的单个 WAV 文件。
+
+例如首次生成：
+
+```bash
+vibefm generate all demo --count 5 --quality exhigh --voice 茉莉
+```
+
+中断后继续：
+
+```bash
+vibefm generate all demo
+```
+
+如果中断发生在 `plan` 完成之前，继续执行时仍需再次提供 `--count`。
+
+阶段进度条输出到 `stderr`，成功结果仍以单行 JSON 输出到 `stdout`：
+
+```text
+[------------------------] 0/6  节目策划  进行中
+[====--------------------] 1/6  节目策划  已完成
+[========----------------] 2/6  节目文稿  已完成
+```
+
+成功 JSON 的 `stages` 会记录本次各阶段是 `completed` 还是 `skipped`，
+`render.path` 指向最终的 `output/program.mp3`。

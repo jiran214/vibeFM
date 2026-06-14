@@ -38,8 +38,16 @@ import {
   type GenerateSpeechOptions,
 } from "../core/speech.js";
 import type { TtsVoice } from "../core/tts.js";
+import {
+  generateProgramWorkflow,
+  type GenerateWorkflowOptions,
+  type WorkflowResult,
+} from "../core/workflow.js";
 import { CliUsageError, toCliFailure, writeJson } from "./output.js";
-import { runWithBlockingNotice } from "./progress.js";
+import {
+  createWorkflowProgressReporter,
+  runWithBlockingNotice,
+} from "./progress.js";
 
 interface CliDependencies {
   importPlaylist?: (
@@ -74,6 +82,11 @@ interface CliDependencies {
     workspaceName: string,
     baseDirectory: string,
   ) => Promise<ProgramRenderResult>;
+  generateAll?: (
+    workspaceName: string,
+    baseDirectory: string,
+    options: GenerateWorkflowOptions,
+  ) => Promise<WorkflowResult>;
 }
 
 export async function runCli(
@@ -146,6 +159,33 @@ export async function runCli(
     }
 
     if (command === "generate") {
+      if (commandArgs[0] === "all") {
+        const { name, count, quality, voice, force } =
+          parseGenerateAllArgs(commandArgs);
+        const generateAll =
+          dependencies.generateAll ?? generateProgramWorkflow;
+        const result = await generateAll(name, baseDirectory, {
+          count,
+          quality,
+          voice,
+          force,
+          onProgress: createWorkflowProgressReporter(),
+        });
+        writeJson({
+          success: true,
+          data: {
+            action: "generate-all",
+            workspace: result.workspace,
+            stages: result.stages,
+            render: {
+              path: result.output,
+              manifest: result.manifest,
+            },
+          },
+        });
+        return 0;
+      }
+
       if (commandArgs[0] === "plan") {
         const { name, count } = parseGeneratePlanArgs(commandArgs);
         const generatePlan = dependencies.generatePlan ?? generateProgramPlan;
@@ -289,7 +329,7 @@ export async function runCli(
       }
 
       throw new CliUsageError(
-        "Usage: vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
+        "Usage: vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
       );
     }
 
@@ -321,12 +361,91 @@ export async function runCli(
     }
 
     throw new CliUsageError(
-      "Usage: vibefm create <name> <prompt> | vibefm delete <name> [--force] | vibefm import <name> <netease-playlist-url> | vibefm status <name> | vibefm cookie | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
+      "Usage: vibefm create <name> <prompt> | vibefm delete <name> [--force] | vibefm import <name> <netease-playlist-url> | vibefm status <name> | vibefm cookie | vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force] | vibefm generate plan <name> --count <number> | vibefm generate script <name> | vibefm generate events <name> | vibefm generate audio <name> [--quality <level>] [--force] | vibefm generate speech <name> [--voice <voice>] [--force] | vibefm generate render <name>",
     );
   } catch (error) {
     writeJson(toCliFailure(error));
     return 1;
   }
+}
+
+function parseGenerateAllArgs(args: string[]): {
+  name: string;
+  count?: number;
+  quality?: string;
+  voice?: TtsVoice;
+  force: boolean;
+} {
+  const usage =
+    "Usage: vibefm generate all <name> [--count <number>] [--quality <level>] [--voice <voice>] [--force]";
+  if (args[0] !== "all") {
+    throw new CliUsageError(usage);
+  }
+
+  let name: string | undefined;
+  let count: number | undefined;
+  let quality: string | undefined;
+  let voice: TtsVoice | undefined;
+  let force = false;
+
+  const rest = args.slice(1);
+  for (let index = 0; index < rest.length; index++) {
+    const argument = rest[index];
+    if (argument === "--force") {
+      force = true;
+      continue;
+    }
+    if (argument === "--count") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      count = Number(value);
+      if (!Number.isSafeInteger(count) || count <= 0) {
+        throw new CliUsageError(usage);
+      }
+      continue;
+    }
+    if (argument === "--quality") {
+      const value = rest[++index];
+      if (
+        value === undefined ||
+        !(VALID_QUALITY_LEVELS as readonly string[]).includes(value)
+      ) {
+        throw new CliUsageError(
+          `Invalid quality level. Must be one of: ${VALID_QUALITY_LEVELS.join(", ")}`,
+        );
+      }
+      quality = value;
+      continue;
+    }
+    if (argument === "--voice") {
+      const value = rest[++index];
+      if (
+        value === undefined ||
+        !(VALID_TTS_VOICES as readonly string[]).includes(value)
+      ) {
+        throw new CliUsageError(
+          `Invalid voice. Must be one of: ${VALID_TTS_VOICES.join(", ")}`,
+        );
+      }
+      voice = value as TtsVoice;
+      continue;
+    }
+    if (argument.startsWith("--")) {
+      throw new CliUsageError(`Unknown option: ${argument}`);
+    }
+    if (name !== undefined) {
+      throw new CliUsageError(usage);
+    }
+    name = argument;
+  }
+
+  if (name === undefined) {
+    throw new CliUsageError(usage);
+  }
+
+  return { name, count, quality, voice, force };
 }
 
 function parseGenerateScriptArgs(args: string[]): { name: string } {
