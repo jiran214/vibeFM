@@ -336,40 +336,6 @@ function validateRadioScript(
     }
     throw error;
   }
-  if (script.plays.length !== plan.track_ids.length) {
-    throw invalidAiResponse(
-      `AI script response has ${script.plays.length} main audio events but the plan has ${plan.track_ids.length} tracks.`,
-    );
-  }
-  for (const [index, event] of script.plays.entries()) {
-    const expectedSource = `/audio/${canonicalId(plan.track_ids[index])}.wav`;
-    if (event.source !== expectedSource) {
-      throw invalidAiResponse(
-        `AI script response main audio at position ${index + 1} has source ${event.source} but expected ${expectedSource}.`,
-      );
-    }
-  }
-  const firstPlayLine = script.plays[0].line;
-  const lastPlayLine = script.plays.at(-1)!.line;
-  if (script.openingLine >= firstPlayLine) {
-    throw invalidAiResponse("AI script response must place Opening before all songs.");
-  }
-  if (!script.hosts.some((host) => host.endLine < firstPlayLine)) {
-    throw invalidAiResponse("AI script response is missing opening host content.");
-  }
-  for (let index = 1; index < script.plays.length; index += 1) {
-    const previousPlayLine = script.plays[index - 1].line;
-    const currentPlayLine = script.plays[index].line;
-    if (
-      !script.hosts.some(
-        (host) => host.line > previousPlayLine && host.endLine < currentPlayLine,
-      )
-    ) {
-      throw invalidAiResponse(
-        `AI script response is missing host content before main audio ${index + 1}.`,
-      );
-    }
-  }
   return { text: script.text, title: script.frontmatter.title };
 }
 

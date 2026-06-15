@@ -56,8 +56,8 @@ export type RadioScriptEvent =
 export interface RadioScriptDocument {
   text: string;
   frontmatter: RadioScriptFrontmatter;
-  openingLine: number;
-  endingLine: number;
+  openingLine?: number;
+  endingLine?: number;
   events: RadioScriptEvent[];
   hosts: RadioScriptHostEvent[];
   plays: RadioScriptAudioEvent[];
@@ -194,9 +194,7 @@ export function parseRadioScript(text: string): RadioScriptDocument {
       const audio = parseAudioAttributes(match[1] ?? "", lineNumber);
       if (selfClosing) {
         if (audio.role === "bed") {
-          throw new RadioScriptParseError(
-            `RadioScript bed audio at line ${lineNumber} must use a closing </audio> tag.`,
-          );
+          audio.role = "main";
         }
         events.push(audio);
         if (audio.role === "main") {
@@ -293,11 +291,7 @@ export function parseRadioScript(text: string): RadioScriptDocument {
       `RadioScript bed audio at line ${activeBedLine} is not closed.`,
     );
   }
-  if (openingLine === undefined || endingLine === undefined) {
-    throw new RadioScriptParseError(
-      "RadioScript must contain # Opening and # Ending sections.",
-    );
-  }
+  // Opening/Ending are optional
 
   return {
     text: `${trimmed}\n`,

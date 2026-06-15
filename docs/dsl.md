@@ -121,13 +121,9 @@ volume="100%"
 <audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
 ```
 
-### 5. 音效（暂时忽略）
+### 5. 音效（参数不使用）
 
-```md
-<audio source="sfx/xxx.wav" role="effect" volume="20%" />
-```
-
-音效只用于短声音，例如电台噪声、提示音、jingle。
+暂未实现
 
 ### 6. 停顿
 
@@ -135,7 +131,7 @@ volume="100%"
 <pause duration="1.5s" />
 ```
 
-用于静音留白、情绪停顿、段落分隔。
+用于静音留白、情绪停顿、段落分隔，偶尔使用。
 
 ### 7. 交叉淡化
 
@@ -143,32 +139,18 @@ volume="100%"
 <crossfade duration="2s" />
 ```
 
-含义：前一个主音频逐渐变小，后一个主音频同时逐渐变大。
-不要在host旁边使用
+含义：前一个主音频逐渐变小，后一个主音频同时逐渐变大。不要在host旁边使用。
 
-## 写作规则
+## 规则
 
 - Markdown 标题只用于结构，例如 `# Opening`、`# Block 1`、`# Ending`
 - 不要输出解释文字
 - 音量必须使用百分比
 - 自闭合标签必须写 `/>`
-- `role="bed"` 的音频**必须使用成对标签** `<audio ...>...</audio>`，禁止使用自闭合 `<audio ... />`
-- `<host>` 内必须有可播读文本
-- 每首主歌曲可以选择使用 `start`、`duration`、`volume`
-- 歌曲文件必须使用 `/audio/<歌曲ID>.wav`，与节目资源空间中的文件一一对应
-
-## 推荐节目结构
-
-```md
-# Opening
-开场口播 + 第一首歌引入
-
-# Block 1
-第一首歌后评论/情绪串联 + 第二首歌引入
-
-# Block 2
-第二首歌后延展 + 第三首歌引入
-
-# Ending
-总结、晚安、结束
-```
+- `role="bed"` 的音频
+    - **必须使用成对标签** `<audio ...>...</audio>`
+    - 禁止使用自闭合 `<audio ... />`
+- `<host>` 内必须有可播读文本，文本过长时，使用多个host
+- 每首主歌曲可以选择使用 `start`、`duration`
+- 不要以 ````yaml` 或任何代码围栏包裹脚本，直接输出 RadioScript
+- 主歌曲 source 必须严格写成 `/audio/<歌曲ID>.wav`，例如 `<audio source=”/audio/<id>.wav” role=”main” volume=”100%” />`

@@ -5,6 +5,16 @@ import { loadAiConfig, type AiMessage } from "./ai.js";
 
 const LOGS_DIR = "logs";
 
+type LogCategory = "llm" | "tts";
+
+const TASK_TO_CATEGORY: Record<AiLogContext["task"], LogCategory> = {
+  "generate-plan": "llm",
+  "generate-script": "llm",
+  tts: "tts",
+  "tts-voiceclone": "tts",
+  "tts-voicedesign": "tts",
+};
+
 export interface AiLogContext {
   task: "generate-plan" | "generate-script" | "tts" | "tts-voiceclone" | "tts-voicedesign";
   workspace: string;
@@ -17,7 +27,8 @@ export async function writeAiLog(
   context: AiLogContext,
   result: { response?: string; error?: string },
 ): Promise<void> {
-  const logsDir = path.join(baseDirectory, LOGS_DIR);
+  const category = TASK_TO_CATEGORY[context.task];
+  const logsDir = path.join(baseDirectory, LOGS_DIR, category);
   await mkdir(logsDir, { recursive: true });
 
   const timestamp = new Date().toISOString();

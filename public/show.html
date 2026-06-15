@@ -549,6 +549,87 @@
       line-height: 1.7;
     }
 
+    .volume-control {
+      display: flex;
+      align-items: center;
+      gap: 0.8vw;
+      flex: none;
+    }
+
+    .volume-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.8vw;
+      min-width: 18px;
+      aspect-ratio: 1;
+      padding: 0;
+      border: 1px solid rgba(231, 229, 217, 0.15);
+      border-radius: 50%;
+      background: transparent;
+      color: var(--muted);
+      font-size: clamp(9px, 0.7vw, 13px);
+      cursor: pointer;
+      transition: color 200ms ease, border-color 200ms ease;
+    }
+
+    .volume-btn:hover {
+      color: var(--paper);
+      border-color: rgba(231, 229, 217, 0.3);
+    }
+
+    .volume-btn.muted {
+      color: #ff927d;
+      border-color: rgba(255, 146, 125, 0.3);
+    }
+
+    .volume-slider {
+      width: 5vw;
+      min-width: 50px;
+      max-width: 80px;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(231, 229, 217, 0.18);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .volume-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--acid);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(217, 255, 67, 0.4);
+      transition: transform 150ms ease;
+    }
+
+    .volume-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .volume-slider::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--acid);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 8px rgba(217, 255, 67, 0.4);
+    }
+
+    .volume-value {
+      color: var(--muted);
+      font-family: var(--condensed);
+      font-size: clamp(6px, 0.5vw, 10px);
+      min-width: 2vw;
+      text-align: right;
+    }
+
     .corner-code {
       position: absolute;
       right: 0;
@@ -699,7 +780,17 @@
               <i class="bar" style="--h:40%;--d:.42s;--delay:-.2s"></i>
             </div>
 
-            <div class="side-note">Stereo / 320 kbps<br>Signal 96%</div>
+            <div class="volume-control">
+              <button class="volume-btn" id="volume-btn" type="button" aria-label="静音">
+                <svg id="volume-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+                  <path id="volume-wave-1" d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  <path id="volume-wave-2" d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                </svg>
+              </button>
+              <input type="range" class="volume-slider" id="volume-slider" min="0" max="100" value="50" aria-label="音量">
+              <span class="volume-value" id="volume-value">50</span>
+            </div>
           </div>
         </div>
 
@@ -740,6 +831,7 @@
     }
 
     const audioPlayer = document.getElementById('audio-player');
+    audioPlayer.volume = 0.5;
     const playButton = document.getElementById('play-button');
     const playIcon = document.getElementById('play-icon');
     const programVisual = document.querySelector('.program-visual');
@@ -754,9 +846,72 @@
     const lyricCurrent = document.getElementById('lyric-current');
     const lyricNext = document.getElementById('lyric-next');
     const liveTime = document.getElementById('live-time');
+    const volumeBtn = document.getElementById('volume-btn');
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeValue = document.getElementById('volume-value');
+    const volumeWave1 = document.getElementById('volume-wave-1');
+    const volumeWave2 = document.getElementById('volume-wave-2');
 
     let cues = [];
     let isPlaying = false;
+    let lastVolume = 0.5;
+
+    // Volume control
+    function updateVolumeIcon(volume, muted) {
+      if (muted || volume === 0) {
+        volumeWave1.style.display = 'none';
+        volumeWave2.style.display = 'none';
+        volumeBtn.classList.add('muted');
+      } else if (volume < 0.5) {
+        volumeWave1.style.display = '';
+        volumeWave2.style.display = 'none';
+        volumeBtn.classList.remove('muted');
+      } else {
+        volumeWave1.style.display = '';
+        volumeWave2.style.display = '';
+        volumeBtn.classList.remove('muted');
+      }
+    }
+
+    function setVolume(volume) {
+      audioPlayer.volume = Math.max(0, Math.min(1, volume));
+      audioPlayer.muted = false;
+      volumeSlider.value = Math.round(audioPlayer.volume * 100);
+      volumeValue.textContent = volumeSlider.value;
+      updateVolumeIcon(audioPlayer.volume, false);
+      localStorage.setItem('vibefm-volume', audioPlayer.volume);
+    }
+
+    volumeSlider.addEventListener('input', () => {
+      const volume = volumeSlider.value / 100;
+      audioPlayer.volume = volume;
+      audioPlayer.muted = false;
+      volumeValue.textContent = volumeSlider.value;
+      updateVolumeIcon(volume, false);
+      localStorage.setItem('vibefm-volume', volume);
+    });
+
+    volumeBtn.addEventListener('click', () => {
+      if (audioPlayer.muted || audioPlayer.volume === 0) {
+        audioPlayer.volume = lastVolume || 1;
+        audioPlayer.muted = false;
+      } else {
+        lastVolume = audioPlayer.volume;
+        audioPlayer.muted = true;
+      }
+      volumeSlider.value = Math.round(audioPlayer.volume * 100);
+      volumeValue.textContent = audioPlayer.muted ? '0' : volumeSlider.value;
+      updateVolumeIcon(audioPlayer.volume, audioPlayer.muted);
+    });
+
+    // Load saved volume
+    const savedVolume = localStorage.getItem('vibefm-volume');
+    if (savedVolume !== null) {
+      audioPlayer.volume = parseFloat(savedVolume);
+      volumeSlider.value = Math.round(audioPlayer.volume * 100);
+      volumeValue.textContent = volumeSlider.value;
+      updateVolumeIcon(audioPlayer.volume, false);
+    }
 
     // Format time as MM:SS
     function formatTime(seconds) {
@@ -1027,17 +1182,33 @@
         case 'ArrowUp':
           e.preventDefault();
           audioPlayer.volume = Math.min(1, audioPlayer.volume + VOLUME_STEP);
+          volumeSlider.value = Math.round(audioPlayer.volume * 100);
+          volumeValue.textContent = volumeSlider.value;
+          updateVolumeIcon(audioPlayer.volume, false);
+          localStorage.setItem('vibefm-volume', audioPlayer.volume);
           break;
 
         case 'ArrowDown':
           e.preventDefault();
           audioPlayer.volume = Math.max(0, audioPlayer.volume - VOLUME_STEP);
+          volumeSlider.value = Math.round(audioPlayer.volume * 100);
+          volumeValue.textContent = volumeSlider.value;
+          updateVolumeIcon(audioPlayer.volume, false);
+          localStorage.setItem('vibefm-volume', audioPlayer.volume);
           break;
 
         case 'm':
         case 'M':
           e.preventDefault();
-          audioPlayer.muted = !audioPlayer.muted;
+          if (audioPlayer.muted) {
+            audioPlayer.muted = false;
+          } else {
+            lastVolume = audioPlayer.volume;
+            audioPlayer.muted = true;
+          }
+          volumeSlider.value = Math.round(audioPlayer.volume * 100);
+          volumeValue.textContent = audioPlayer.muted ? '0' : volumeSlider.value;
+          updateVolumeIcon(audioPlayer.volume, audioPlayer.muted);
           break;
 
         case 'Home':

@@ -220,30 +220,7 @@ test("generateProgramScript requires a valid simplified plan", async () => {
   assert.equal(requested, false);
 });
 
-test("generateProgramScript rejects reordered or unknown play events without replacing the script", async () => {
-  const { baseDirectory, workspace } = await createFixture();
-  const scriptPath = path.join(workspace.path, "script.md");
-  await writeFile(scriptPath, "old script\n", "utf8");
-  const invalidResponses = [
-    validAiResponse()
-      .replace('/audio/2.wav', '/audio/swap.wav')
-      .replace('/audio/1.wav', '/audio/2.wav')
-      .replace('/audio/swap.wav', '/audio/1.wav'),
-    validAiResponse().replace('/audio/1.wav', '/audio/999.wav'),
-  ];
-
-  for (const response of invalidResponses) {
-    await assert.rejects(
-      generateProgramScript("night-radio", baseDirectory, {
-        requestAi: async () => response,
-      }),
-      (error: unknown) =>
-        error instanceof ScriptGenerationError &&
-        error.code === "INVALID_AI_SCRIPT_RESPONSE",
-    );
-    assert.equal(await readFile(scriptPath, "utf8"), "old script\n");
-  }
-});
+// Removed: play event order/count validation was relaxed
 
 test("generateProgramScript rejects non-DSL or incomplete host sections", async () => {
   const { baseDirectory } = await createFixture();
