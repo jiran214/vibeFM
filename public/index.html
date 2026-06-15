@@ -343,15 +343,15 @@
     .show-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 1px;
-      background: var(--line);
-      border: 1px solid var(--line);
+      gap: 0;
     }
 
     .playlist-card,
     .show-card {
       position: relative;
       min-width: 0;
+      border: 1px solid var(--line);
+      margin: -1px 0 0 -1px;
       background: rgba(8, 9, 7, 0.94);
       transition: background 220ms ease;
     }
@@ -510,11 +510,12 @@
     }
 
     .show-title {
+      display: -webkit-box;
       overflow: hidden;
       font-size: 1.6rem;
-      line-height: 1.1;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      line-height: 1.2;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
     }
 
     .show-prompt {
@@ -555,6 +556,65 @@
     @keyframes blink-bar {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.4; }
+    }
+
+    .show-action {
+      margin-top: 0.8rem;
+    }
+
+    .show-bottom-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.5rem;
+    }
+
+    .action-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid var(--acid);
+      background: transparent;
+      color: var(--acid);
+      font-family: var(--condensed);
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      transition: background 180ms ease, color 180ms ease;
+    }
+
+    .action-button:hover {
+      background: var(--acid);
+      color: var(--ink);
+    }
+
+    .action-button.is-retry {
+      border-color: #ff927d;
+      color: #ff927d;
+    }
+
+    .action-button.is-retry:hover {
+      background: #ff927d;
+      color: var(--ink);
+    }
+
+    .show-stage {
+      margin-top: 0.5rem;
+      color: var(--acid);
+      font-family: var(--condensed);
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .show-error {
+      margin-top: 0.4rem;
+      color: #ff927d;
+      font-size: 0.7rem;
+      line-height: 1.4;
     }
 
     .footer {
@@ -737,7 +797,17 @@
   </div>
 
   <script type="module">
-    import { listWorkspaces, createWorkspace, testConnection } from '/js/api.js';
+    import { listWorkspaces, createWorkspace, testConnection, connectGenerateSSE } from '/js/api.js';
+
+    const STAGE_LABELS = {
+      plan: '节目策划',
+      detail: '歌曲信息',
+      script: '节目文稿',
+      events: '事件流',
+      audio: '歌曲音频',
+      speech: '主播语音',
+      render: '节目合成',
+    };
 
     const createForm = document.querySelector('#create-form');
     const createInput = document.querySelector('#radio-source');
@@ -748,14 +818,14 @@
     const emptyState = document.querySelector('#empty-state');
     const testStatus = document.querySelector('#test-status');
 
-    let pollInterval = null;
+    // Track active SSE connections per workspace
+    const activeConnections = new Map();
 
     // Load workspaces on page load
     async function loadWorkspaces() {
       try {
         const { items } = await listWorkspaces();
         renderShowCards(items);
-        startPollingIfNeeded(items);
       } catch (error) {
         console.error('Failed to load workspaces:', error);
       }
@@ -766,8 +836,12 @@
       showCount.textContent = String(items.length).padStart(2, '0');
       emptyState.style.display = items.length === 0 ? 'block' : 'none';
 
-      // Sort by name descending (newest first, since name contains timestamp)
-      const sorted = [...items].sort((a, b) => b.name.localeCompare(a.name));
+      const sorted = [...items].sort((a, b) => {
+        if (a.created_at && b.created_at) {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+        return b.name.localeCompare(a.name);
+      });
 
       for (const item of sorted) {
         const card = createShowCard(item);
@@ -779,10 +853,33 @@
       const card = document.createElement('article');
       card.className = 'show-card';
       card.dataset.name = item.name;
-      card.dataset.progress = item.progress;
 
       const isComplete = item.progress === 100;
+      const isActive = activeConnections.has(item.name);
       const coverUrl = item.playlistImageUrl || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=84';
+
+      let statusHtml = '';
+      if (isComplete) {
+        statusHtml = '<span class="show-number">Ready</span>';
+      } else if (isActive) {
+        statusHtml = '<span class="show-number is-generating">...</span>';
+      } else {
+        statusHtml = `<span class="show-number">${item.progress}%</span>`;
+      }
+
+      let bottomRowHtml = '';
+      if (!isComplete && !isActive) {
+        bottomRowHtml = `
+          <div class="show-bottom-row">
+            ${item.playlist_name ? `<span class="show-playlist-name">${item.playlist_name}</span>` : '<span></span>'}
+            <button class="action-button" data-action="continue" data-name="${item.name}">
+              继续生成
+            </button>
+          </div>
+        `;
+      } else if (item.playlist_name) {
+        bottomRowHtml = `<span class="show-playlist-name">${item.playlist_name}</span>`;
+      }
 
       card.innerHTML = `
         <a class="show-link" href="${isComplete ? `/show.html?name=${encodeURIComponent(item.name)}` : '#'}"
@@ -790,40 +887,134 @@
            ${!isComplete ? 'onclick="return false"' : ''}>
           <div class="cover">
             <img src="${coverUrl}" alt="${item.title} 节目封面" loading="lazy">
-            <span class="show-number${!isComplete ? ' is-generating' : ''}">${isComplete ? 'Ready' : `${item.progress}%`}</span>
+            ${statusHtml}
           </div>
           <div class="show-copy">
             <h2 class="show-title">${item.title}</h2>
             <p class="show-prompt">${item.prompt || ''}</p>
-            ${item.playlist_name ? `<span class="show-playlist-name">${item.playlist_name}</span>` : ''}
+            <div class="show-stage" data-stage></div>
+            <div class="show-error" data-error></div>
+            ${bottomRowHtml}
           </div>
         </a>
         ${!isComplete ? `<div class="progress-bar" style="width: ${item.progress}%"></div>` : ''}
       `;
 
+      // Bind button events
+      const continueBtn = card.querySelector('[data-action="continue"]');
+      if (continueBtn) {
+        continueBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          startGeneration(item.name);
+        });
+      }
+
       return card;
     }
 
-    function startPollingIfNeeded(items) {
-      const hasInProgress = items.some(item => item.progress < 100);
+    function startGeneration(name) {
+      if (activeConnections.has(name)) return;
 
-      if (hasInProgress && !pollInterval) {
-        pollInterval = setInterval(async () => {
-          try {
-            const { items } = await listWorkspaces();
-            renderShowCards(items);
+      const conn = connectGenerateSSE(name, { count: 5 }, {
+        onProgress: (event) => {
+          updateCardProgress(name, event);
+        },
+        onComplete: (stages) => {
+          activeConnections.delete(name);
+          loadWorkspaces();
+        },
+        onError: (message) => {
+          activeConnections.delete(name);
+          updateCardError(name, message);
+        },
+      });
 
-            if (!items.some(item => item.progress < 100)) {
-              clearInterval(pollInterval);
-              pollInterval = null;
-            }
-          } catch (error) {
-            console.error('Polling failed:', error);
-          }
-        }, 5000);
-      } else if (!hasInProgress && pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
+      activeConnections.set(name, conn);
+      updateCardState(name, 'generating');
+    }
+
+    function updateCardProgress(name, event) {
+      const card = showGrid.querySelector(`[data-name="${name}"]`);
+      if (!card) return;
+
+      const stageEl = card.querySelector('[data-stage]');
+      if (stageEl) {
+        const label = STAGE_LABELS[event.stage] || event.stage;
+        if (event.status === 'started') {
+          stageEl.textContent = `${event.index + 1}/${event.total} ${label}...`;
+        } else if (event.status === 'completed') {
+          stageEl.textContent = `${event.index + 1}/${event.total} ${label} ✓`;
+        }
+      }
+
+      const progressBar = card.querySelector('.progress-bar');
+      if (progressBar) {
+        const percent = Math.round(((event.index + (event.status === 'completed' ? 1 : 0)) / event.total) * 100);
+        progressBar.style.width = `${percent}%`;
+      }
+    }
+
+    function updateCardState(name, state) {
+      const card = showGrid.querySelector(`[data-name="${name}"]`);
+      if (!card) return;
+
+      const stageEl = card.querySelector('[data-stage]');
+      const errorEl = card.querySelector('[data-error]');
+      const showCopy = card.querySelector('.show-copy');
+
+      // Remove existing bottom row
+      const existingRow = showCopy.querySelector('.show-bottom-row');
+      if (existingRow) existingRow.remove();
+
+      if (state === 'generating') {
+        const numberEl = card.querySelector('.show-number');
+        if (numberEl) {
+          numberEl.textContent = '...';
+          numberEl.classList.add('is-generating');
+        }
+        if (stageEl) stageEl.textContent = '准备中...';
+        if (errorEl) errorEl.textContent = '';
+      }
+    }
+
+    function updateCardError(name, message) {
+      const card = showGrid.querySelector(`[data-name="${name}"]`);
+      if (!card) return;
+
+      const stageEl = card.querySelector('[data-stage]');
+      const errorEl = card.querySelector('[data-error]');
+      const showCopy = card.querySelector('.show-copy');
+
+      if (stageEl) stageEl.textContent = '';
+      if (errorEl) errorEl.textContent = message;
+
+      // Remove existing bottom row and add retry row
+      const existingRow = showCopy.querySelector('.show-bottom-row');
+      if (existingRow) existingRow.remove();
+
+      const bottomRow = document.createElement('div');
+      bottomRow.className = 'show-bottom-row';
+      bottomRow.innerHTML = `
+        <span></span>
+        <button class="action-button is-retry" data-action="retry" data-name="${name}">
+          重试
+        </button>
+      `;
+
+      const retryBtn = bottomRow.querySelector('[data-action="retry"]');
+      retryBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startGeneration(name);
+      });
+
+      showCopy.appendChild(bottomRow);
+
+      const numberEl = card.querySelector('.show-number');
+      if (numberEl) {
+        numberEl.textContent = '失败';
+        numberEl.classList.remove('is-generating');
       }
     }
 
@@ -848,25 +1039,29 @@
 
       try {
         const isUrl = /^https?:\/\//iu.test(source);
-        const shortId = Math.random().toString(36).substring(2, 8);
         const body = {
-          name: `show-${Date.now()}-${shortId}`,
+          name: String(Date.now()),
           prompt: isUrl ? '' : source,
         };
 
         if (isUrl) {
           body.playlistUrl = source;
+        } else {
+          body.playlistQuery = source;
         }
 
         await createWorkspace(body);
 
         createInput.value = '';
         formMessage.dataset.state = 'success';
-        formMessage.textContent = '创建成功，已加入节目工作台。';
+        formMessage.textContent = '创建成功，开始生成节目...';
 
-        // Reload workspaces
         await loadWorkspaces();
+        startGeneration(body.name);
       } catch (error) {
+        if (error.code === 'NO_SEARCH_RESULTS') {
+          alert(`未搜到"${source}"相关的专辑`);
+        }
         formMessage.dataset.state = 'error';
         formMessage.textContent = error.message || '创建失败，请重试。';
       } finally {
@@ -903,13 +1098,10 @@
       }, 3000);
     });
 
-    // Pause polling when page is hidden
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden && pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-      } else if (!document.hidden) {
-        loadWorkspaces();
+    // Clean up connections when page unloads
+    window.addEventListener('beforeunload', () => {
+      for (const conn of activeConnections.values()) {
+        conn.close();
       }
     });
 

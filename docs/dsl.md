@@ -121,10 +121,10 @@ volume="100%"
 <audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
 ```
 
-### 5. 音效
+### 5. 音效（暂时忽略）
 
 ```md
-<audio source="sfx/radio_noise.wav" role="effect" volume="20%" />
+<audio source="sfx/xxx.wav" role="effect" volume="20%" />
 ```
 
 音效只用于短声音，例如电台噪声、提示音、jingle。

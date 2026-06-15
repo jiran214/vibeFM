@@ -174,7 +174,7 @@ export async function generateSpeech(
     const wavPath = path.join(speechDir, segment.fileName);
 
     if (options.force || !(await fileExists(wavPath))) {
-      const result = await synthesize(segment.text, voice, {
+      const result = await synthesize(segment.text.toLowerCase(), voice, {
         baseDirectory,
         voiceDesignPrompt: segment.voiceDesignPrompt,
         workspace: workspaceName,

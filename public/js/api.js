@@ -41,11 +41,36 @@ export function deleteWorkspace(name) {
   });
 }
 
-export function generateWorkspace(name, options = {}) {
-  return apiFetch(`/workspaces/${encodeURIComponent(name)}/generate`, {
-    method: 'POST',
-    body: JSON.stringify(options),
-  });
+export function connectGenerateSSE(name, options = {}, callbacks = {}) {
+  const { onProgress, onComplete, onError } = callbacks;
+  const params = new URLSearchParams();
+  if (options.count != null) params.set('count', String(options.count));
+  if (options.quality) params.set('quality', options.quality);
+  if (options.voice) params.set('voice', options.voice);
+  if (options.force) params.set('force', 'true');
+
+  const url = `${API_BASE}/workspaces/${encodeURIComponent(name)}/generate?${params}`;
+  const eventSource = new EventSource(url);
+
+  eventSource.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === 'complete') {
+      onComplete?.(data.stages);
+      eventSource.close();
+    } else if (data.type === 'error') {
+      onError?.(data.message);
+      eventSource.close();
+    } else {
+      onProgress?.(data);
+    }
+  };
+
+  eventSource.onerror = () => {
+    onError?.('连接中断');
+    eventSource.close();
+  };
+
+  return { close: () => eventSource.close() };
 }
 
 export function testConnection() {

@@ -62,7 +62,7 @@ function formatLyrics(lyrics: LyricLine[]): string {
       const [min, sec] = l.time.split(":");
       return `[${min}:${sec.split(".")[0]}]${l.text || ""}`;
     })
-    .join("  ");
+    .join("\n");
 }
 
 export async function generateDetail(

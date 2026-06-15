@@ -408,7 +408,8 @@ function formatTracksInfo(tracks: PlaylistTrack[]): string {
         parts.push(`时长：${track.durationSeconds}秒`);
       }
       if (track.lyrics) {
-        parts.push(`歌词：\n${track.lyrics}`);
+        const flattenedLyrics = track.lyrics.replace(/\n+/gu, " ").replace(/\s{2,}/gu, " ").trim();
+        parts.push(`歌词：${flattenedLyrics}`);
       }
       if (track.comment) {
         parts.push(`评论：${track.comment}`);

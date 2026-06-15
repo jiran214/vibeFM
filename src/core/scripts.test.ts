@@ -138,6 +138,30 @@ test("generateProgramScript writes the validated RadioScript DSL to script.md", 
   assert.ok(scriptText.endsWith("</host>\n"));
 });
 
+test("generateProgramScript flattens lyrics newlines into spaces", async () => {
+  const { baseDirectory, workspace } = await createFixture();
+  const infoPath = path.join(workspace.path, "info.json");
+  const info = JSON.parse(await readFile(infoPath, "utf8"));
+  info.tracks_lyrics = [
+    { id: 1, lyrics: "[00:01]Line one\n[00:02]Line two\n[00:03]Line three" },
+    { id: 2, lyrics: "[00:01]First\n\n[00:02]Second" },
+  ];
+  await writeFile(infoPath, JSON.stringify(info));
+
+  const requests: AiMessage[][] = [];
+  await generateProgramScript("night-radio", baseDirectory, {
+    requestAi: async (messages) => {
+      requests.push(messages);
+      return validAiResponse();
+    },
+  });
+
+  const userPrompt = String(requests[0][1].content);
+  assert.match(userPrompt, /\[00:01\]Line one \[00:02\]Line two \[00:03\]Line three/u);
+  assert.match(userPrompt, /\[00:01\]First \[00:02\]Second/u);
+  assert.ok(!userPrompt.includes("Line one\n"));
+});
+
 test("generateProgramScript checks dependencies before requesting AI", async () => {
   const baseDirectory = await mkdtemp(path.join(os.tmpdir(), "vibefm-script-"));
   await createWorkspace("night-radio", "Late-night radio", baseDirectory);

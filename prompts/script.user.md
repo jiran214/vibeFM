@@ -15,7 +15,7 @@
 - 以 `# Opening` 开始正文，以 `# Ending` 结束节目。
 - 每首歌曲前必须有 `<host>...</host>` 主持串词。
 - 主歌曲 source 必须严格写成 `/audio/<歌曲ID>.wav`，例如 `<audio source="/audio/123.wav" role="main" volume="100%" />`。
-- 主持串词应自然融合歌手歌曲主题、歌词表达、精选评论和前后歌曲的情绪衔接。
-- 歌曲可以重复使用，串词时选择性使用bed audio
-- 开头合适部分插入Vibe FM的介绍
-
+- 避免机械使用“接下来播放”“刚才听到的是”等报幕句式。
+- 歌曲可以重复使用，多用bed role audio
+- Opening 要像真实电台频道包装：包含 Vibe FM、本期主题、听众进入感。
+- 根据歌词的时间戳audio切换时多卡歌词点

@@ -76,6 +76,7 @@ export interface GenerateProgramRenderOptions {
   executeFfmpeg?: FfmpegExecutor;
   probeDuration?: DurationProbe;
   now?: () => Date;
+  speechRate?: number;
 }
 
 interface FileSegment {
@@ -88,6 +89,7 @@ interface FileSegment {
   fadeOut?: number;
   loop?: boolean;
   crossfadeBefore?: number;
+  speechRate?: number;
 }
 
 interface SilenceSegment {
@@ -195,6 +197,7 @@ export async function generateProgramRender(
   const probeDuration = options.probeDuration ?? defaultProbeDuration;
   const assetsDirectory =
     options.assetsDirectory ?? path.join(baseDirectory, "assets");
+  const speechRate = options.speechRate ?? 1.1;
   const { segments, bgmSpans, subtitleCues } = await buildTimeline(
     events,
     speechMedia,
@@ -203,6 +206,7 @@ export async function generateProgramRender(
     workspace.path,
     assetsDirectory,
     (filePath) => probeDuration(filePath, options.ffprobePath ?? "ffprobe"),
+    speechRate,
   );
   const graph = buildFilterGraph(segments, bgmSpans);
 
@@ -304,6 +308,7 @@ async function buildTimeline(
   workspaceDirectory: string,
   assetsDirectory: string,
   probeDuration: (filePath: string) => Promise<number>,
+  speechRate: number = 1.0,
 ): Promise<{
   segments: TimelineSegment[];
   bgmSpans: BgmSpan[];
@@ -382,12 +387,13 @@ async function buildTimeline(
           appendSegment({
             type: "file",
             filePath,
-            duration: hostDuration,
+            duration: hostDuration / speechRate,
+            speechRate,
           }, event.text);
           if (activeBgm !== undefined && event.duckTo !== undefined) {
             activeBgm.ducks.push({
-              startAt: duration - hostDuration - activeBgm.startAt,
-              duration: hostDuration,
+              startAt: duration - (hostDuration / speechRate) - activeBgm.startAt,
+              duration: hostDuration / speechRate,
               volume: event.duckTo,
               fade: event.duckFade ?? 0,
             });
@@ -501,10 +507,13 @@ function buildFilterGraph(
     const chain = [
       `[${inputIndex}:a]aresample=${SAMPLE_RATE}`,
       `aformat=sample_fmts=fltp:sample_rates=${SAMPLE_RATE}:channel_layouts=stereo`,
-      `atrim=start=${formatNumber(segment.start ?? 0)}:duration=${formatNumber(segment.duration)}`,
+      `atrim=start=${formatNumber(segment.start ?? 0)}:duration=${formatNumber(segment.duration * (segment.speechRate ?? 1))}`,
       "asetpts=PTS-STARTPTS",
     ];
     inputIndex += 1;
+    if (segment.speechRate !== undefined && segment.speechRate !== 1) {
+      chain.push(`atempo=${formatNumber(segment.speechRate)}`);
+    }
     if (segment.volume !== undefined) {
       chain.push(`volume=${formatNumber(segment.volume)}`);
     }
@@ -866,6 +875,15 @@ function requiredTrackTitle(
   return title;
 }
 
+function stripVoiceTags(text: string): string {
+  return text
+    .replace(/\([^)]*\)/gu, "")
+    .replace(/（[^）]*）/gu, "")
+    .replace(/\[[^\]]*\]/gu, "")
+    .replace(/\s{2,}/gu, " ")
+    .trim();
+}
+
 function appendSubtitleCue(
   cues: SubtitleCue[],
   start: number,
@@ -882,10 +900,14 @@ function appendSubtitleCue(
   if (end <= start) {
     return;
   }
+  const cleanText = stripVoiceTags(text);
+  if (!cleanText) {
+    return;
+  }
   cues.push({
     start,
     end,
-    text: text.trim().replace(/\r\n?/gu, "\n").replace(/\n{2,}/gu, "\n"),
+    text: cleanText.replace(/\r\n?/gu, "\n").replace(/\n{2,}/gu, "\n"),
   });
 }
 

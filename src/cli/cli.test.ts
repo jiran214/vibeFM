@@ -77,9 +77,9 @@ test("create command prints JSON and writes the prompt to info.json", async () =
     "info.json",
   );
   assert.equal(response.data.info.path, infoPath);
-  assert.deepEqual(JSON.parse(await readFile(infoPath, "utf8")), {
-    prompt: "适合清晨通勤的轻松节目",
-  });
+  const info = JSON.parse(await readFile(infoPath, "utf8"));
+  assert.equal(info.prompt, "适合清晨通勤的轻松节目");
+  assert.ok(info.created_at, "created_at should exist");
 });
 
 test("delete --force prints JSON and removes the workspace", async () => {

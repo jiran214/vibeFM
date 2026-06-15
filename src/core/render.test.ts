@@ -38,7 +38,7 @@ async function writeCompleteDependencies(workspaceDirectory: string): Promise<vo
       source: "/speech/host-001.wav",
       role: "host",
       voiceDesignPrompt: "warm",
-      text: "Welcome.",
+      text: "(warm)Welcome.[emphasis]（强调）",
       duckTo: 0.1,
       duckFade: 0.5,
     },
@@ -136,11 +136,11 @@ describe("generateProgramRender", () => {
       await readFile(result.subtitles, "utf8"),
       [
         "1",
-        "00:00:00,000 --> 00:00:02,000",
+        "00:00:00,000 --> 00:00:01,636",
         "Welcome.",
         "",
         "2",
-        "00:00:02,000 --> 00:00:12,000",
+        "00:00:01,636 --> 00:00:11,636",
         "播放《Test Song》中...",
         "",
       ].join("\n"),
@@ -156,7 +156,7 @@ describe("generateProgramRender", () => {
     assert.match(filterGraph, /acrossfade=d=2/u);
     assert.match(filterGraph, /amix=inputs=2:duration=first/u);
     assert.match(filterGraph, /eval=frame/u);
-    assert.match(filterGraph, /\(t-4\)\/0\.5/u);
+    assert.match(filterGraph, /\(t-3\.636364\)\/0\.5/u);
     assert.match(filterGraph, /loudnorm=I=-16:LRA=11:TP=-1\.5/u);
 
     const manifest = JSON.parse(await readFile(result.manifest, "utf8"));
@@ -174,6 +174,47 @@ describe("generateProgramRender", () => {
       bitrate: "192k",
       loudness: { integrated: -16, range: 11, truePeak: -1.5 },
     });
+  });
+
+  it("strips voice tags from subtitle text", async () => {
+    const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
+    await writeCompleteDependencies(workspaceDirectory);
+    await Promise.all([
+      writeFile(path.join(baseDirectory, "assets", "bgm", "bed.wav"), "bgm"),
+      writeFile(path.join(baseDirectory, "assets", "sfx", "chime.wav"), "sfx"),
+    ]);
+
+    const events = [
+      { type: "audio", action: "start", source: "bgm/bed", role: "bed", volume: 0.2, fadeIn: 1, fadeOut: 1 },
+      {
+        type: "audio",
+        id: "host-001",
+        source: "/speech/host-001.wav",
+        role: "host",
+        voiceDesignPrompt: "warm",
+        text: "(磁性)[深呼吸]大家好，（微笑）欢迎收听。",
+        duckTo: 0.1,
+        duckFade: 0.5,
+      },
+      { type: "audio", action: "stop", role: "bed" },
+    ];
+    await writeFile(
+      path.join(workspaceDirectory, "events.json"),
+      JSON.stringify(events, null, 2),
+    );
+
+    const result = await generateProgramRender("test", baseDirectory, {
+      executeFfmpeg: async (args) => {
+        await writeFile(args.at(-1)!, "rendered");
+      },
+      probeDuration: async () => 4,
+    });
+
+    const srt = await readFile(result.subtitles, "utf8");
+    assert.ok(!srt.includes("(磁性)"));
+    assert.ok(!srt.includes("[深呼吸]"));
+    assert.ok(!srt.includes("（微笑）"));
+    assert.ok(srt.includes("大家好，欢迎收听。"));
   });
 
   it("rejects a missing events dependency before invoking FFmpeg", async () => {

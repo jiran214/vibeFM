@@ -103,7 +103,7 @@ export async function createWorkspace(
 
   const infoPath = path.join(workspacePath, WORKSPACE_INFO_FILE);
   try {
-    await writeJsonAtomically(infoPath, { prompt });
+    await writeJsonAtomically(infoPath, { prompt, created_at: new Date().toISOString() });
   } catch (error) {
     await rm(workspacePath, { recursive: true, force: true });
     throw error;
@@ -123,7 +123,13 @@ export async function updateWorkspacePrompt(
 ): Promise<void> {
   const workspacePath = getWorkspacePath(name, baseDirectory);
   const infoPath = path.join(workspacePath, WORKSPACE_INFO_FILE);
-  await writeJsonAtomically(infoPath, { prompt });
+  let existing: Record<string, unknown> = {};
+  try {
+    existing = JSON.parse(await readFile(infoPath, "utf8"));
+  } catch {
+    // info.json missing or invalid
+  }
+  await writeJsonAtomically(infoPath, { ...existing, prompt });
 }
 
 export async function readWorkspaceInfo(
@@ -263,6 +269,7 @@ export interface WorkspaceListItem {
   playlist_name?: string;
   playlistImageUrl?: string;
   progress: number;
+  created_at?: string;
 }
 
 export async function listWorkspaces(
@@ -286,7 +293,7 @@ export async function listWorkspaces(
     if (!entry.isDirectory()) continue;
 
     const workspacePath = path.join(root, entry.name);
-    const item: WorkspaceListItem = { name: entry.name, prompt: "", title: "生成中...", progress: 0 };
+    const item: WorkspaceListItem = { name: entry.name, prompt: "", title: "未生成", progress: 0 };
 
     try {
       const infoContent = await readFile(
@@ -297,6 +304,9 @@ export async function listWorkspaces(
       item.prompt = info.prompt ?? "";
       if (info.title) {
         item.title = info.title;
+      }
+      if (info.created_at) {
+        item.created_at = info.created_at;
       }
     } catch {
       // info.json missing or invalid
@@ -345,7 +355,7 @@ export async function getWorkspaceShowDetail(
 
   const detail: WorkspaceShowDetail = {
     name: workspace.name,
-    title: "生成中...",
+    title: "未生成",
     progress: 0,
     tracks: [],
   };
@@ -357,7 +367,7 @@ export async function getWorkspaceShowDetail(
       "utf8",
     );
     infoData = JSON.parse(infoContent);
-    if (infoData.title) {
+    if (infoData?.title) {
       detail.title = infoData.title as string;
     }
   } catch {
