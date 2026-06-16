@@ -4,7 +4,7 @@
 
 # vibeFM — 一个不存在的音乐电台
 
-**从网易云音乐歌单到完整电台节目，全程 AI 自动化。智能挑选歌曲、生成主播文稿、语音合成、音频混音，一键生成专业级电台节目。**
+**AI 电台节目编排引擎：从网易云歌单出发，完成选曲、主播文稿、语音合成与音频编排，把播放列表变成完整电台节目。**
 
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20.9-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -28,7 +28,9 @@
 
 ### 目录
 
+- [核心理念](#核心理念)
 - [功能特性](#功能特性)
+- [RadioScript DSL](#radioscript-dsl)
 - [技术栈](#技术栈)
 - [快速开始](#快速开始)
 - [使用方法](#使用方法)
@@ -36,22 +38,65 @@
 - [项目结构](#项目结构)
 - [免责声明](#免责声明)
 
+### 核心理念
+
+vibeFM 不只是让 AI 决定“下一首播什么”，而是先生成一份可编辑、可解析、可执行的 RadioScript，再由程序完成 TTS、音乐、铺底、淡入淡出与最终混音。
+
+```text
+歌单 + 节目主题
+      ↓
+AI 生成 RadioScript
+      ↓
+解析为时间线事件
+      ↓
+TTS / 音乐 / BGM / 转场
+      ↓
+FFmpeg 渲染完整节目
+```
+
+> 把歌单变成节目，而不只是播放列表。
+
 ### 功能特性
 
-- **智能歌单导入** — 支持网易云音乐歌单 URL 或关键词搜索导入
-- **AI 歌曲挑选** — 根据节目主题，AI 智能挑选最适合的歌曲
-- **节目文稿生成** — 自动生成专业的电台节目脚本，包含开场、串词、结尾
-- **语音合成** — 使用 TTS 技术生成主播口播音频
-- **音频合成** — FFmpeg 混音，生成带字幕的完整电台节目
+- **智能歌单导入** — 支持通过网易云音乐歌单 URL 或关键词搜索导入
+- **AI 节目策划** — 根据节目主题与歌单内容完成选曲、结构设计和情绪编排
+- **RadioScript 生成** — 输出可人工编辑、程序解析和稳定复现的电台节目脚本
+- **主播语音合成** — 根据 `voice_design_prompt` 生成统一风格的主持人口播
+- **音频演出编排** — 支持主音乐、铺底音乐、音量、起始时间、时长和淡入淡出
+- **完整节目渲染** — 使用 FFmpeg 合成带字幕的完整电台节目
+- **Web 与 CLI 双入口** — 既可通过网页操作，也可集成到自动化工作流
+
+### RadioScript DSL
+
+RadioScript 是一种面向 AI 生成和音频渲染的“Markdown + 类 HTML 标签”格式。它将内容生成与音频执行解耦，使节目可以被阅读、修改、解析和重新渲染。
+
+```markdown
+---
+title: 深夜仍未熄灭的房间
+voice_design_prompt: 温柔、克制、略带疲惫感的深夜电台主播
+---
+
+# Opening
+
+<host>晚上好，这里是 vibeFM。今晚，我们从一张歌单出发，听几首适合独处的歌。</host>
+
+<audio source="/audio/123456.wav" role="main" volume="100%" fade_in="2s">
+  <audio source="/audio/123456.wav" role="bed" volume="18%" start="45s" duration="20s" fade_in="2s" fade_out="2s" />
+</audio>
+
+# Ending
+
+<host>感谢收听，愿今晚的声音替你保留一点没有说出口的情绪。</host>
+```
 
 ### 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | HTML + CSS + Tailwind CSS |
+| 前端 | Next.js 15 + Tailwind CSS |
 | 后端 | Next.js App Router API Routes |
 | AI | OpenAI 兼容 API（支持自定义 Base URL） |
-| 音频 | FFmpeg 8.1.1+ |
+| 音频编排 | RadioScript DSL + FFmpeg 8.1.1+ |
 | 语言 | TypeScript |
 
 ### 快速开始
@@ -141,7 +186,7 @@ npm run cli -- show <名称>
 
 ### 自定义 Prompt
 
-节目生成的每个阶段都可以通过修改 Prompt 模板来控制 AI 的输出风格：
+节目策划与 RadioScript 生成阶段均可通过修改 Prompt 模板控制节目结构、主持风格和音频编排策略：
 
 ```
 prompts/
@@ -170,7 +215,7 @@ vibeFM/
 
 ### 免责声明
 
-本项目仅供学习交流使用，部分功能依赖非官方接口。请勿用于商业用途，如有侵权请联系我。
+本项目仅供学习与技术研究使用，部分功能依赖非官方接口。使用者应自行确认音乐来源、账号权限、平台条款及相关版权要求，请勿将本项目用于未经授权的内容分发或商业用途。
 
 ### 许可证
 
