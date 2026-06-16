@@ -17,7 +17,6 @@ title: 城市夜行
 voice_design_prompt: 温柔、低声、语速偏慢
 ---
 
-# Opening
 <audio source="/audio/33894312.wav" role="bed" start="0s" volume="25%" fade_in="3s" fade_out="2s">
 <host duck_to="12%" duck_fade="0.8s">
 晚上好，欢迎来到《城市夜行》。
@@ -25,10 +24,10 @@ voice_design_prompt: 温柔、低声、语速偏慢
 </audio>
 <pause duration="1s" />
 <audio source="sfx/radio_noise" role="effect" volume="15%" />
-<crossfade duration="2s" />
 <audio source="/audio/33894312.wav" role="main" start="20s" duration="90s" volume="100%" fade_in="2s" fade_out="3s" />
+<crossfade duration="2s" />
+<audio source="/audio/33894312.wav" role="main" start="0s" duration="60s" volume="100%" fade_in="2s" fade_out="3s" />
 
-# Ending
 <host voice_design_prompt="温柔、放松、有晚安感">
 我们下次再见。
 </host>`;
@@ -64,13 +63,23 @@ test("parseRadioEvents converts RadioScript into an ordered event stream", () =>
     { type: "audio", action: "stop", role: "bed" },
     { type: "pause", duration: 1 },
     { type: "audio", source: "sfx/radio_noise", role: "effect", volume: 0.15 },
-    { type: "crossfade", duration: 2 },
     {
       type: "audio",
       source: "/audio/33894312.wav",
       role: "main",
       start: 20,
       duration: 90,
+      volume: 1,
+      fadeIn: 2,
+      fadeOut: 3,
+    },
+    { type: "crossfade", duration: 2 },
+    {
+      type: "audio",
+      source: "/audio/33894312.wav",
+      role: "main",
+      start: 0,
+      duration: 60,
       volume: 1,
       fadeIn: 2,
       fadeOut: 3,
@@ -94,9 +103,9 @@ test("generateProgramEvents writes events.json atomically", async () => {
   const result = await generateProgramEvents("night-radio", baseDirectory);
 
   assert.equal(result.path, path.join(workspace.path, "events.json"));
-  assert.equal(result.eventCount, 8);
+  assert.equal(result.eventCount, 9);
   assert.equal(result.hostCount, 2);
-  assert.equal(result.playCount, 1);
+  assert.equal(result.playCount, 2);
   assert.deepEqual(result.frontmatter, {
     title: "城市夜行",
     voiceDesignPrompt: "温柔、低声、语速偏慢",

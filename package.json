@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build && npm run build:cli",
+    "build": "next build --webpack && npm run build:cli",
     "build:cli": "tsc -p tsconfig.cli.json && chmod +x dist/cli/index.js",
     "start": "next start",
-    "test": "tsx --test src/core/*.test.ts src/cli/*.test.ts",
+    "test": "tsx --test src/core/*.test.ts src/cli/*.test.ts && node --test public/*.test.mjs",
     "cli": "tsx src/cli/index.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.cli.json --noEmit"
   },

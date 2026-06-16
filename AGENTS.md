@@ -37,7 +37,7 @@ AI智能搜索歌单，挑选歌曲，制作电台节目
 # 重要文档
 - `docs/技术决策.md` （新增功能请主动修改文档内容）
 - `docs/cli.md` 命令说明
-- `docs/dsl.md` 电台节目脚本规则
+- `prompts/dsl.md` 电台节目脚本规则
 - `docs/api.md` 接口文档
 - `logs` AI生成日志
 

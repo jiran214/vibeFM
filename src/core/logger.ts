@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { loadAiConfig, type AiMessage } from "./ai.js";
@@ -26,7 +26,7 @@ export async function writeAiLog(
   messages: AiMessage[],
   context: AiLogContext,
   result: { response?: string; error?: string },
-): Promise<void> {
+): Promise<string> {
   const category = TASK_TO_CATEGORY[context.task];
   const logsDir = path.join(baseDirectory, LOGS_DIR, category);
   await mkdir(logsDir, { recursive: true });
@@ -76,6 +76,20 @@ export async function writeAiLog(
   }
 
   await writeFile(filePath, sections.join("\n"), "utf8");
+  return filePath;
+}
+
+export async function writeErrorEntry(
+  baseDirectory: string,
+  context: AiLogContext,
+  error: unknown,
+  logFilePath: string,
+): Promise<void> {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const timestamp = new Date().toISOString();
+  const line = `${timestamp}\t${context.task}\t${context.workspace}\t${errorMessage}\t${logFilePath}\n`;
+  const errorsPath = path.join(baseDirectory, LOGS_DIR, "errors.txt");
+  await appendFile(errorsPath, line, "utf8");
 }
 
 export function withAiLogging(
@@ -94,7 +108,8 @@ export function withAiLogging(
       return response;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await writeAiLog(baseDirectory, messages, enrichedContext, { error: errorMessage });
+      const logFilePath = await writeAiLog(baseDirectory, messages, enrichedContext, { error: errorMessage });
+      await writeErrorEntry(baseDirectory, enrichedContext, error, logFilePath).catch(() => {});
       throw error;
     }
   };

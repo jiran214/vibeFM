@@ -65,7 +65,20 @@ export interface GenerateWorkflowOptions {
   quality?: string;
   voice?: TtsVoice;
   force?: boolean;
+  hostVolume?: number;
+  hostGap?: number;
   onProgress?: (event: WorkflowProgressEvent) => void;
+}
+
+export function getDefaultTrackCount(): number {
+  const value = process.env.DEFAULT_TRACK_COUNT;
+  if (value !== undefined) {
+    const parsed = Number(value);
+    if (Number.isSafeInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 5;
 }
 
 export interface WorkflowDependencies {
@@ -100,6 +113,7 @@ export interface WorkflowDependencies {
   generateRender?: (
     workspaceName: string,
     baseDirectory: string,
+    options?: { hostVolume?: number; hostGap?: number },
   ) => Promise<ProgramRenderResult>;
 }
 
@@ -216,14 +230,9 @@ async function runStage(
 ): Promise<void> {
   switch (stage) {
     case "plan": {
-      if (options.count === undefined) {
-        throw new WorkflowError(
-          "MISSING_WORKFLOW_OPTION",
-          "--count is required when the plan stage has not completed.",
-        );
-      }
+      const count = options.count ?? getDefaultTrackCount();
       const generatePlan = dependencies.generatePlan ?? generateProgramPlan;
-      await generatePlan(workspaceName, options.count, baseDirectory);
+      await generatePlan(workspaceName, count, baseDirectory);
       return;
     }
     case "detail": {
@@ -264,7 +273,10 @@ async function runStage(
     case "render": {
       const generateRender =
         dependencies.generateRender ?? generateProgramRender;
-      await generateRender(workspaceName, baseDirectory);
+      await generateRender(workspaceName, baseDirectory, {
+        hostVolume: options.hostVolume,
+        hostGap: options.hostGap,
+      });
     }
   }
 }

@@ -7,11 +7,14 @@
   --muted: #8d9085;
   --acid: #d9ff43;
   --acid-soft: rgba(217, 255, 67, 0.12);
+  --warning: #ffbf47;
+  --danger: #ff826f;
   --line: rgba(231, 229, 217, 0.16);
   --line-strong: rgba(231, 229, 217, 0.32);
-  --serif: Georgia, "Times New Roman", "Songti SC", serif;
+  --serif: "Iowan Old Style", Baskerville, "Songti SC", STSong, serif;
   --sans: "Avenir Next", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-  --condensed: "Arial Narrow", "DIN Condensed", "PingFang SC", sans-serif;
+  --condensed: "Avenir Next Condensed", "DIN Condensed", "Futura Condensed Medium", "PingFang SC", sans-serif;
+  --mono: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", monospace;
 }
 
 * {
@@ -60,6 +63,13 @@ a {
 
 button {
   cursor: pointer;
+}
+
+button,
+input,
+[role="button"],
+[role="slider"] {
+  touch-action: manipulation;
 }
 
 a {

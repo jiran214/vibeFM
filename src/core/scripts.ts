@@ -9,7 +9,7 @@ import { getWorkspace, type Workspace } from "./workspaces.js";
 const INFO_FILE = "info.json";
 const PLAYLIST_FILE = "playlist.json";
 const SCRIPT_FILE = "script.md";
-const DSL_FILE = "docs/dsl.md";
+const DSL_FILE = "prompts/dsl.md";
 const SCRIPT_SYSTEM_PROMPT = "script.system.md";
 const SCRIPT_USER_PROMPT = "script.user.md";
 const SCRIPT_FORMAT = "radio-script-dsl" as const;

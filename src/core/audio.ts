@@ -147,7 +147,7 @@ export async function generateAudio(
 
   interface TrackResult {
     id: string;
-    status: "downloaded" | "placeholder";
+    status: "downloaded" | "failed";
     filePath: string;
     br?: number;
     size?: number;
@@ -287,10 +287,7 @@ export async function generateAudio(
     const trackId = String(id);
 
     if (itemCode !== 200 || url === undefined || url === "") {
-      const wavFileName = `${trackId}.wav`;
-      const wavPath = path.join(audioDirectory, wavFileName);
-      await writeWavAtomically(wavPath, createSilentWav());
-      results.push({ id: trackId, status: "placeholder", filePath: wavFileName, error: `Playback code ${itemCode ?? "unknown"}. Response: ${JSON.stringify(item)}` });
+      results.push({ id: trackId, status: "failed", filePath: `${trackId}.wav`, error: `Playback code ${itemCode ?? "unknown"}. Response: ${JSON.stringify(item)}` });
       continue;
     }
 
@@ -308,10 +305,7 @@ export async function generateAudio(
         signal: AbortSignal.timeout(15_000),
       });
       if (!audioResponse.ok) {
-        const wavFileName = `${trackId}.wav`;
-        const wavPath = path.join(audioDirectory, wavFileName);
-        await writeWavAtomically(wavPath, createSilentWav());
-        results.push({ id: trackId, status: "placeholder", filePath: wavFileName, br, size, type, error: `Download HTTP ${audioResponse.status}. URL: ${url}` });
+        results.push({ id: trackId, status: "failed", filePath: `${trackId}.wav`, br, size, type, error: `Download HTTP ${audioResponse.status}. URL: ${url}` });
         continue;
       }
 
@@ -320,19 +314,16 @@ export async function generateAudio(
       await rename(tempPath, filePath);
       results.push({ id: trackId, status: "downloaded", filePath: wavFileName, br, size, type });
     } catch (error) {
-      const wavFileName = `${trackId}.wav`;
-      const wavPath = path.join(audioDirectory, wavFileName);
-      await writeWavAtomically(wavPath, createSilentWav());
-      results.push({ id: trackId, status: "placeholder", filePath: wavFileName, br, size, type, error: `${getErrorMessage(error)}. URL: ${url}` });
+      results.push({ id: trackId, status: "failed", filePath: `${trackId}.wav`, br, size, type, error: `${getErrorMessage(error)}. URL: ${url}` });
     } finally {
       await rm(tempPath, { force: true });
     }
   }
 
   const downloaded = results.filter((r) => r.status === "downloaded");
-  const placeholders = results.filter((r) => r.status === "placeholder");
+  const failed = results.filter((r) => r.status === "failed");
 
-  // Write manifest.json
+  // Write manifest.json with current progress
   const manifestPath = path.join(audioDirectory, "manifest.json");
   const manifestData = {
     version: 1,
@@ -354,14 +345,23 @@ export async function generateAudio(
   };
   await writeJsonAtomically(manifestPath, manifestData);
 
+  // Abort if any tracks failed - progress is saved for retry
+  if (failed.length > 0) {
+    const failedIds = failed.map((r) => r.id).join(", ");
+    throw new AudioDownloadError(
+      "PLAYBACK_REQUEST_FAILED",
+      `${failed.length} track(s) failed to download: ${failedIds}. Run again to retry missing tracks.`,
+    );
+  }
+
   return {
     workspace,
     directory: audioDirectory,
     manifest: manifestPath,
     trackCount: plan.tracks.length,
     downloadedCount: downloaded.length,
-    placeholderCount: placeholders.length,
-    warnings: results.filter((r) => r.status === "placeholder" && r.error !== undefined).map((r) => `Track ${r.id}: ${r.error}`),
+    placeholderCount: 0,
+    warnings: [],
   };
 }
 
@@ -457,47 +457,7 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-function createSilentWav(): Buffer {
-  const sampleRate = 44100;
-  const channels = 1;
-  const bitsPerSample = 16;
-  const durationSeconds = 1;
-  const dataSize = sampleRate * channels * (bitsPerSample / 8) * durationSeconds;
-  const headerSize = 44;
-  const wav = Buffer.alloc(headerSize + dataSize);
 
-  // RIFF header
-  wav.write("RIFF", 0);
-  wav.writeUInt32LE(headerSize + dataSize - 8, 4);
-  wav.write("WAVE", 8);
-
-  // fmt chunk
-  wav.write("fmt ", 12);
-  wav.writeUInt32LE(16, 16); // chunk size
-  wav.writeUInt16LE(1, 20); // PCM
-  wav.writeUInt16LE(channels, 22);
-  wav.writeUInt32LE(sampleRate, 24);
-  wav.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28); // byte rate
-  wav.writeUInt16LE(channels * (bitsPerSample / 8), 32); // block align
-  wav.writeUInt16LE(bitsPerSample, 34);
-
-  // data chunk
-  wav.write("data", 36);
-  wav.writeUInt32LE(dataSize, 40);
-  // rest is zeros (silence)
-
-  return wav;
-}
-
-async function writeWavAtomically(filePath: string, data: Buffer): Promise<void> {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  try {
-    await writeFile(tempPath, data, { flag: "wx" });
-    await rename(tempPath, filePath);
-  } finally {
-    await rm(tempPath, { force: true });
-  }
-}
 
 async function writeJsonAtomically(filePath: string, value: unknown): Promise<void> {
   const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;

@@ -176,6 +176,114 @@ describe("generateProgramRender", () => {
     });
   });
 
+  it("inserts a silence gap between consecutive host segments", async () => {
+    const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
+    const events = [
+      {
+        type: "audio",
+        id: "host-001",
+        source: "/speech/host-001.wav",
+        role: "host",
+        voiceDesignPrompt: "warm",
+        text: "第一段。",
+      },
+      {
+        type: "audio",
+        id: "host-002",
+        source: "/speech/host-002.wav",
+        role: "host",
+        voiceDesignPrompt: "warm",
+        text: "第二段。",
+      },
+    ];
+    await Promise.all([
+      writeFile(
+        path.join(workspaceDirectory, "events.json"),
+        JSON.stringify(events, null, 2),
+      ),
+      writeFile(
+        path.join(workspaceDirectory, "speech", "manifest.json"),
+        JSON.stringify({
+          version: 1,
+          segments: [
+            { id: "host-001", status: "synthesized", filePath: "host-001.wav" },
+            { id: "host-002", status: "synthesized", filePath: "host-002.wav" },
+          ],
+        }),
+      ),
+      writeFile(path.join(workspaceDirectory, "speech", "host-001.wav"), "h1"),
+      writeFile(path.join(workspaceDirectory, "speech", "host-002.wav"), "h2"),
+    ]);
+
+    let filterGraph = "";
+    await generateProgramRender("test", baseDirectory, {
+      executeFfmpeg: async (args) => {
+        const graphOption = args.indexOf("-/filter_complex");
+        filterGraph = await readFile(args[graphOption + 1], "utf8");
+        await writeFile(args.at(-1)!, "rendered");
+      },
+      probeDuration: async () => 3,
+    });
+
+    // Verify 0.5s silence gap appears between the two host segments
+    assert.match(filterGraph, /anullsrc.*d=0\.5/u);
+  });
+
+  it("respects explicit pause between hosts instead of adding gap", async () => {
+    const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
+    const events = [
+      {
+        type: "audio",
+        id: "host-001",
+        source: "/speech/host-001.wav",
+        role: "host",
+        voiceDesignPrompt: "warm",
+        text: "第一段。",
+      },
+      { type: "pause", duration: 2 },
+      {
+        type: "audio",
+        id: "host-002",
+        source: "/speech/host-002.wav",
+        role: "host",
+        voiceDesignPrompt: "warm",
+        text: "第二段。",
+      },
+    ];
+    await Promise.all([
+      writeFile(
+        path.join(workspaceDirectory, "events.json"),
+        JSON.stringify(events, null, 2),
+      ),
+      writeFile(
+        path.join(workspaceDirectory, "speech", "manifest.json"),
+        JSON.stringify({
+          version: 1,
+          segments: [
+            { id: "host-001", status: "synthesized", filePath: "host-001.wav" },
+            { id: "host-002", status: "synthesized", filePath: "host-002.wav" },
+          ],
+        }),
+      ),
+      writeFile(path.join(workspaceDirectory, "speech", "host-001.wav"), "h1"),
+      writeFile(path.join(workspaceDirectory, "speech", "host-002.wav"), "h2"),
+    ]);
+
+    let filterGraph = "";
+    await generateProgramRender("test", baseDirectory, {
+      executeFfmpeg: async (args) => {
+        const graphOption = args.indexOf("-/filter_complex");
+        filterGraph = await readFile(args[graphOption + 1], "utf8");
+        await writeFile(args.at(-1)!, "rendered");
+      },
+      probeDuration: async () => 3,
+    });
+
+    // Should have the explicit 2s pause, not the default 0.5s gap
+    assert.match(filterGraph, /anullsrc.*d=2/u);
+    assert.doesNotMatch(filterGraph, /anullsrc.*d=0\.5/u);
+  });
+
   it("strips voice tags from subtitle text", async () => {
     const { baseDirectory, workspaceDirectory } = await createRenderWorkspace();
     await writeCompleteDependencies(workspaceDirectory);

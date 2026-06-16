@@ -204,7 +204,7 @@ export async function runCli(
 
     if (command === "generate") {
       if (commandArgs[0] === "all") {
-        const { name, count, commentLimit, quality, voice, force } =
+        const { name, count, commentLimit, quality, voice, force, hostVolume, hostGap } =
           parseGenerateAllArgs(commandArgs);
         const generateAll =
           dependencies.generateAll ?? generateProgramWorkflow;
@@ -214,6 +214,8 @@ export async function runCli(
           quality,
           voice,
           force,
+          hostVolume,
+          hostGap,
           onProgress: createWorkflowProgressReporter(),
         });
         writeJson({
@@ -233,10 +235,12 @@ export async function runCli(
 
       if (commandArgs[0] === "plan") {
         const { name, count } = parseGeneratePlanArgs(commandArgs);
+        const { getDefaultTrackCount } = await import("../core/workflow.js");
+        const finalCount = count ?? getDefaultTrackCount();
         const generatePlan = dependencies.generatePlan ?? generateProgramPlan;
         const result = await runWithBlockingNotice(
           "AI 正在生成节目策划，请稍候...",
-          () => generatePlan(name, count, baseDirectory),
+          () => generatePlan(name, finalCount, baseDirectory),
         );
         writeJson({
           success: true,
@@ -371,12 +375,12 @@ export async function runCli(
       }
 
       if (commandArgs[0] === "render") {
-        const { name } = parseGenerateRenderArgs(commandArgs);
+        const { name, hostVolume, hostGap } = parseGenerateRenderArgs(commandArgs);
         const generateRender =
           dependencies.generateRender ?? generateProgramRender;
         const result = await runWithBlockingNotice(
           "正在合成节目，请稍候...",
-          () => generateRender(name, baseDirectory),
+          () => generateRender(name, baseDirectory, { hostVolume, hostGap }),
         );
         writeJson({
           success: true,
@@ -510,9 +514,11 @@ function parseGenerateAllArgs(args: string[]): {
   quality?: string;
   voice?: TtsVoice;
   force: boolean;
+  hostVolume?: number;
+  hostGap?: number;
 } {
   const usage =
-    "Usage: vibefm generate all <name> [--count <number>] [--commentLimit <number>] [--quality <level>] [--voice <voice>] [--force]";
+    "Usage: vibefm generate all <name> [--count <number>] [--commentLimit <number>] [--quality <level>] [--voice <voice>] [--force] [--host-volume <number>] [--host-gap <seconds>]";
   if (args[0] !== "all") {
     throw new CliUsageError(usage);
   }
@@ -523,6 +529,8 @@ function parseGenerateAllArgs(args: string[]): {
   let quality: string | undefined;
   let voice: TtsVoice | undefined;
   let force = false;
+  let hostVolume: number | undefined;
+  let hostGap: number | undefined;
 
   const rest = args.slice(1);
   for (let index = 0; index < rest.length; index++) {
@@ -579,6 +587,22 @@ function parseGenerateAllArgs(args: string[]): {
       voice = value as TtsVoice;
       continue;
     }
+    if (argument === "--host-volume") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+(\.\d+)?$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      hostVolume = Number(value);
+      continue;
+    }
+    if (argument === "--host-gap") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+(\.\d+)?$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      hostGap = Number(value);
+      continue;
+    }
     if (argument.startsWith("--")) {
       throw new CliUsageError(`Unknown option: ${argument}`);
     }
@@ -592,7 +616,7 @@ function parseGenerateAllArgs(args: string[]): {
     throw new CliUsageError(usage);
   }
 
-  return { name, count, commentLimit, quality, voice, force };
+  return { name, count, commentLimit, quality, voice, force, hostVolume, hostGap };
 }
 
 function parseGenerateScriptArgs(args: string[]): { name: string } {
@@ -609,11 +633,49 @@ function parseGenerateEventsArgs(args: string[]): { name: string } {
   return { name: args[1] };
 }
 
-function parseGenerateRenderArgs(args: string[]): { name: string } {
-  if (args.length !== 2 || args[0] !== "render") {
-    throw new CliUsageError("Usage: vibefm generate render <name>");
+function parseGenerateRenderArgs(args: string[]): { name: string; hostVolume?: number; hostGap?: number } {
+  const usage = "Usage: vibefm generate render <name> [--host-volume <number>] [--host-gap <seconds>]";
+  if (args[0] !== "render") {
+    throw new CliUsageError(usage);
   }
-  return { name: args[1] };
+
+  let name: string | undefined;
+  let hostVolume: number | undefined;
+  let hostGap: number | undefined;
+
+  const rest = args.slice(1);
+  for (let index = 0; index < rest.length; index++) {
+    const argument = rest[index];
+    if (argument === "--host-volume") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+(\.\d+)?$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      hostVolume = Number(value);
+      continue;
+    }
+    if (argument === "--host-gap") {
+      const value = rest[++index];
+      if (value === undefined || !/^\d+(\.\d+)?$/u.test(value)) {
+        throw new CliUsageError(usage);
+      }
+      hostGap = Number(value);
+      continue;
+    }
+    if (argument.startsWith("--")) {
+      throw new CliUsageError(`Unknown option: ${argument}`);
+    }
+    if (name !== undefined) {
+      throw new CliUsageError(usage);
+    }
+    name = argument;
+  }
+
+  if (name === undefined) {
+    throw new CliUsageError(usage);
+  }
+
+  return { name, hostVolume, hostGap };
 }
 
 const VALID_QUALITY_LEVELS = [
@@ -751,27 +813,37 @@ function parseGenerateSpeechArgs(args: string[]): {
 
 function parseGeneratePlanArgs(args: string[]): {
   name: string;
-  count: number;
+  count?: number;
 } {
+  const usage = "Usage: vibefm generate plan <name> [--count <number>]";
+
+  if (args.length < 2 || args[0] !== "plan") {
+    throw new CliUsageError(usage);
+  }
+
+  const name = args[1];
+  if (name.startsWith("-")) {
+    throw new CliUsageError(usage);
+  }
+
+  if (args.length === 2) {
+    return { name };
+  }
+
   if (
     args.length !== 4 ||
-    args[0] !== "plan" ||
     args[2] !== "--count" ||
     !/^\d+$/u.test(args[3])
   ) {
-    throw new CliUsageError(
-      "Usage: vibefm generate plan <name> --count <number>",
-    );
+    throw new CliUsageError(usage);
   }
 
   const count = Number(args[3]);
   if (!Number.isSafeInteger(count) || count <= 0) {
-    throw new CliUsageError(
-      "Usage: vibefm generate plan <name> --count <number>",
-    );
+    throw new CliUsageError(usage);
   }
 
-  return { name: args[1], count };
+  return { name, count };
 }
 
 function parseGenerateDetailArgs(args: string[]): {
@@ -869,7 +941,12 @@ function parseCreateArgs(args: string[]): {
   }
 
   if (!playlistUrl && !playlistQuery && (prompt === undefined || prompt.trim().length === 0)) {
-    throw new CliUsageError(usage);
+    const envDefaultPrompt = process.env.DEFAULT_PROMPT;
+    if (envDefaultPrompt !== undefined && envDefaultPrompt.trim().length > 0) {
+      prompt = envDefaultPrompt;
+    } else {
+      throw new CliUsageError(usage);
+    }
   }
 
   return {

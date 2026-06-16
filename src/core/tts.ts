@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse } from "dotenv";
 import OpenAI from "openai";
 
-import { writeAiLog, type AiLogContext } from "./logger.js";
+import { writeAiLog, writeErrorEntry, type AiLogContext } from "./logger.js";
 
 const TTS_ENV_KEYS = ["MIMO_API_KEY", "MIMO_BASE_URL", "MIMO_TTS_MODEL"] as const;
 const DEFAULT_TTS_MODEL: TtsModel = "mimo-v2.5-tts-voicedesign";
@@ -168,9 +168,10 @@ export async function synthesizeSpeech(
     const audioData = (completion as any).choices?.[0]?.message?.audio?.data;
 
     if (!audioData) {
+      const responseSummary = JSON.stringify(completion, null, 2);
       throw new TtsRequestError(
         "EMPTY_TTS_RESPONSE",
-        "TTS response did not contain audio data.",
+        `TTS response did not contain audio data.\nResponse: ${responseSummary}`,
       );
     }
 
@@ -184,9 +185,12 @@ export async function synthesizeSpeech(
   } catch (error) {
     if (options.baseDirectory && options.workspace) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await writeAiLog(options.baseDirectory, logMessages, logContext, {
+      const logFilePath = await writeAiLog(options.baseDirectory, logMessages, logContext, {
         error: errorMessage,
-      }).catch(() => {});
+      }).catch(() => undefined);
+      if (logFilePath) {
+        await writeErrorEntry(options.baseDirectory, logContext, error, logFilePath).catch(() => {});
+      }
     }
 
     if (error instanceof TtsRequestError) {
@@ -300,9 +304,10 @@ export async function synthesizeWithVoiceClone(
     const audioData = (completion as any).choices?.[0]?.message?.audio?.data;
 
     if (!audioData) {
+      const responseSummary = JSON.stringify(completion, null, 2);
       throw new TtsRequestError(
         "EMPTY_TTS_RESPONSE",
-        "TTS response did not contain audio data.",
+        `TTS response did not contain audio data.\nResponse: ${responseSummary}`,
       );
     }
 
@@ -316,9 +321,12 @@ export async function synthesizeWithVoiceClone(
   } catch (error) {
     if (options.baseDirectory && options.workspace) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await writeAiLog(options.baseDirectory, logMessages, logContext, {
+      const logFilePath = await writeAiLog(options.baseDirectory, logMessages, logContext, {
         error: errorMessage,
-      }).catch(() => {});
+      }).catch(() => undefined);
+      if (logFilePath) {
+        await writeErrorEntry(options.baseDirectory, logContext, error, logFilePath).catch(() => {});
+      }
     }
 
     if (error instanceof TtsRequestError) {
@@ -373,8 +381,8 @@ export async function designVoice(
       audio: {
         format: "wav" as const,
         voice: "mimo_default",
-        optimize_text_preview: true,
         ...options.audio,
+        optimize_text_preview: false,
       },
       stream: false,
     });
@@ -382,9 +390,10 @@ export async function designVoice(
     const audioData = (completion as any).choices?.[0]?.message?.audio?.data;
 
     if (!audioData) {
+      const responseSummary = JSON.stringify(completion, null, 2);
       throw new TtsRequestError(
         "EMPTY_TTS_RESPONSE",
-        "TTS response did not contain audio data.",
+        `TTS response did not contain audio data.\nResponse: ${responseSummary}`,
       );
     }
 
@@ -398,9 +407,12 @@ export async function designVoice(
   } catch (error) {
     if (options.baseDirectory && options.workspace) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      await writeAiLog(options.baseDirectory, logMessages, logContext, {
+      const logFilePath = await writeAiLog(options.baseDirectory, logMessages, logContext, {
         error: errorMessage,
-      }).catch(() => {});
+      }).catch(() => undefined);
+      if (logFilePath) {
+        await writeErrorEntry(options.baseDirectory, logContext, error, logFilePath).catch(() => {});
+      }
     }
 
     if (error instanceof TtsRequestError) {

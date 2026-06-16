@@ -310,7 +310,6 @@ test("generate plan command shows a blocking notice and prints JSON", async () =
 
 test("generate plan command validates count arguments", async () => {
   for (const args of [
-    ["generate", "plan", "morning-show"],
     ["generate", "plan", "morning-show", "--count", "0"],
     ["generate", "plan", "morning-show", "--count", "2.5"],
     ["generate", "plan", "morning-show", "--unknown", "2"],

@@ -56,8 +56,6 @@ export type RadioScriptEvent =
 export interface RadioScriptDocument {
   text: string;
   frontmatter: RadioScriptFrontmatter;
-  openingLine?: number;
-  endingLine?: number;
   events: RadioScriptEvent[];
   hosts: RadioScriptHostEvent[];
   plays: RadioScriptAudioEvent[];
@@ -89,8 +87,6 @@ export function parseRadioScript(text: string): RadioScriptDocument {
   const plays: RadioScriptAudioEvent[] = [];
   let activeHost: ActiveHost | undefined;
   let activeBedLine: number | undefined;
-  let openingLine: number | undefined;
-  let endingLine: number | undefined;
 
   for (let index = frontmatterEndLine; index < lines.length; index += 1) {
     const rawLine = lines[index];
@@ -125,25 +121,6 @@ export function parseRadioScript(text: string): RadioScriptDocument {
         );
       }
       activeHost.content.push(rawLine);
-      continue;
-    }
-
-    if (line === "# Opening") {
-      if (openingLine !== undefined) {
-        throw new RadioScriptParseError(
-          "RadioScript contains multiple Opening sections.",
-        );
-      }
-      openingLine = lineNumber;
-      continue;
-    }
-    if (line === "# Ending") {
-      if (endingLine !== undefined) {
-        throw new RadioScriptParseError(
-          "RadioScript contains multiple Ending sections.",
-        );
-      }
-      endingLine = lineNumber;
       continue;
     }
 
@@ -291,13 +268,34 @@ export function parseRadioScript(text: string): RadioScriptDocument {
       `RadioScript bed audio at line ${activeBedLine} is not closed.`,
     );
   }
-  // Opening/Ending are optional
+  // Bed audio controls must not split a crossfade from its target main audio.
+  let crossfadePending = false;
+  let bedSinceLastMain = false;
+  for (const event of events) {
+    if (event.type === "audio" && event.role === "main" && event.action === undefined) {
+      if (crossfadePending && bedSinceLastMain) {
+        throw new RadioScriptParseError(
+          `RadioScript bed audio splits a crossfade before line ${event.line}.`,
+        );
+      }
+      crossfadePending = false;
+      bedSinceLastMain = false;
+    } else if (event.type === "crossfade") {
+      if (bedSinceLastMain) {
+        throw new RadioScriptParseError(
+          `RadioScript bed audio splits a crossfade before line ${event.line}.`,
+        );
+      }
+      crossfadePending = true;
+      bedSinceLastMain = false;
+    } else if (event.type === "audio" && event.role === "bed") {
+      bedSinceLastMain = true;
+    }
+  }
 
   return {
     text: `${trimmed}\n`,
     frontmatter,
-    openingLine,
-    endingLine,
     events,
     hosts,
     plays,

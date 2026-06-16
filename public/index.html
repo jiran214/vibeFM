@@ -4,25 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="vibeFM AI 电台节目工作台">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <title>vibeFM · AI Radio Workspace</title>
   <link rel="stylesheet" href="/css/app.css">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            ink: '#080907',
-            panel: '#10120f',
-            'panel-raised': '#151712',
-            paper: '#e7e5d9',
-            muted: '#8d9085',
-            acid: '#d9ff43',
-          }
-        }
-      }
-    }
-  </script>
   <style>
     .shell {
       position: relative;
@@ -79,6 +63,24 @@
       font-weight: 800;
     }
 
+    .brand-copy {
+      display: grid;
+      gap: 0.18rem;
+    }
+
+    .brand-name {
+      line-height: 1;
+    }
+
+    .brand-subtitle {
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.48rem;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
     .brand-mark {
       position: relative;
       width: 1.15rem;
@@ -122,7 +124,7 @@
     .workspace {
       width: min(1180px, calc(100% - 8rem));
       margin: 0 auto;
-      padding: 6.2rem 0 4rem;
+      padding: 5.2rem 0 4rem;
     }
 
     .hero {
@@ -142,6 +144,32 @@
       animation: reveal 700ms 180ms both;
     }
 
+    .station-ident {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      margin: 0 0 1.5rem;
+      color: var(--acid);
+      font-family: var(--mono);
+      font-size: 0.62rem;
+      font-weight: 700;
+      letter-spacing: 0.17em;
+      text-transform: uppercase;
+      animation: reveal 700ms 160ms both;
+    }
+
+    .station-ident::before,
+    .station-ident::after {
+      width: 2.5rem;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--acid));
+      content: "";
+    }
+
+    .station-ident::after {
+      background: linear-gradient(90deg, var(--acid), transparent);
+    }
+
     .eyebrow::before,
     .eyebrow::after {
       width: 2.2rem;
@@ -153,7 +181,7 @@
     h1 {
       margin: 0;
       font-family: var(--serif);
-      font-size: clamp(8rem, 18vw, 16rem) !important;
+      font-size: clamp(7.2rem, 15vw, 13rem) !important;
       font-weight: 400;
       line-height: 0.75;
       letter-spacing: -0.09em;
@@ -163,11 +191,12 @@
     h1 em {
       color: var(--acid);
       font-weight: 400;
+      font-style: italic;
     }
 
     .hero-copy {
       max-width: 34rem;
-      margin: 2.1rem 0 0;
+      margin: 2.35rem 0 0;
       color: var(--muted);
       font-family: var(--serif);
       font-size: 1rem;
@@ -179,6 +208,26 @@
       width: min(900px, 100%);
       margin-top: 3.2rem;
       animation: reveal 800ms 390ms both;
+    }
+
+    .source-console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 0.8rem;
+      border: 1px solid var(--line);
+      border-bottom: 0;
+      color: var(--muted);
+      background: rgba(8, 9, 7, 0.8);
+      font-family: var(--mono);
+      font-size: 0.55rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .source-console-head strong {
+      color: var(--acid);
+      font-weight: 600;
     }
 
     .create-form {
@@ -467,12 +516,79 @@
       padding: 1.35rem;
     }
 
+    .show-card::before {
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      z-index: 3;
+      width: 3px;
+      height: calc(100% + 2px);
+      background: var(--muted);
+      content: "";
+      opacity: 0.35;
+      transition: background 180ms ease, opacity 180ms ease;
+    }
+
+    .show-card--ready::before,
+    .show-card--generating::before {
+      background: var(--acid);
+      opacity: 1;
+    }
+
+    .show-card--draft::before {
+      background: var(--warning);
+      opacity: 0.72;
+    }
+
+    .show-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.85rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.52rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .show-episode {
+      color: var(--paper);
+    }
+
+    .show-signal {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .show-signal::before {
+      width: 0.38rem;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      box-shadow: 0 0 0.65rem currentColor;
+    }
+
+    .show-card--ready .show-signal,
+    .show-card--generating .show-signal {
+      color: var(--acid);
+    }
+
+    .show-card--draft .show-signal {
+      color: var(--warning);
+    }
+
     .show-link {
       display: block;
     }
 
     .show-card .cover {
       aspect-ratio: 1;
+      border-radius: 50%;
+      box-shadow: 0 1.5rem 3rem rgba(0, 0, 0, 0.32);
     }
 
     .show-card .cover::before {
@@ -480,13 +596,17 @@
       inset: 0;
       z-index: 1;
       content: "";
-      background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.72));
+      border: 1px solid rgba(217, 255, 67, 0.12);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, var(--ink) 0 8%, rgba(217, 255, 67, 0.3) 8.2% 8.8%, transparent 9%),
+        linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.72));
     }
 
     .show-number {
       position: absolute;
-      right: 0.8rem;
-      bottom: 0.65rem;
+      right: 1.6rem;
+      bottom: 1.35rem;
       z-index: 2;
       color: var(--acid);
       font-family: var(--condensed);
@@ -634,6 +754,30 @@
       line-height: 1.6;
     }
 
+    .empty-state {
+      display: grid;
+      justify-items: center;
+      gap: 0.5rem;
+      padding: 5rem 1rem;
+      border: 1px dashed var(--line);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .empty-state strong {
+      color: var(--paper);
+      font-family: var(--serif);
+      font-size: 1.35rem;
+      font-weight: 400;
+    }
+
+    .empty-state span {
+      font-family: var(--mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
     @media (max-width: 1080px) {
       .topbar,
       .footer {
@@ -661,6 +805,7 @@
       }
 
       .brand-dial,
+      .brand-subtitle,
       .status-label,
       .section-code {
         display: none;
@@ -672,7 +817,7 @@
       }
 
       h1 {
-        font-size: clamp(6rem, 30vw, 10rem) !important;
+        font-size: clamp(5.6rem, 27vw, 8.5rem) !important;
       }
 
       .hero-copy {
@@ -687,6 +832,11 @@
       .create-form {
         grid-template-columns: 1fr;
         gap: 0.45rem;
+      }
+
+      .source-console-head {
+        align-items: flex-start;
+        gap: 0.5rem;
       }
 
       .create-input {
@@ -721,6 +871,11 @@
         grid-template-columns: 5.8rem 1fr;
       }
 
+
+      .show-card-head {
+        margin-bottom: 0.7rem;
+      }
+
       .footer {
         flex-direction: column;
         gap: 0.5rem;
@@ -745,26 +900,34 @@
     <header class="topbar">
       <a class="brand" href="/index.html" aria-label="vibeFM 首页">
         <span class="brand-mark" aria-hidden="true"></span>
-        vibeFM
+        <span class="brand-copy">
+          <span class="brand-name">vibe<span style="color: var(--acid)">FM</span></span>
+          <span class="brand-subtitle">Independent AI Radio</span>
+        </span>
       </a>
       <div class="status" id="test-status" aria-label="测试连接" role="button" tabindex="0">
         <span class="status-light" aria-hidden="true"></span>
-        <span class="status-label">Test Connection</span>
+        <span class="status-label">System Check</span>
       </div>
     </header>
 
     <main class="workspace">
       <section class="hero" aria-labelledby="page-title">
+        <p class="station-ident">AI RADIO STATION / SIGNAL 096.7</p>
         <h1 id="page-title">vibe<em>FM</em></h1>
-        <p class="hero-copy">从一张歌单开始，挑选歌曲、编排情绪，让 AI 完成属于你的电台节目。</p>
+        <p class="hero-copy">把歌单变成电台，让音乐自己说话</p>
 
         <div class="create-area">
+          <div class="source-console-head" aria-hidden="true">
+            <span><strong>SOURCE INPUT</strong> / CHANNEL A</span>
+            <span>MODE 01 / NETEASE PLAYLIST</span>
+          </div>
           <form class="create-form" id="create-form" novalidate>
-            <label for="radio-source" hidden>网易云歌单链接或节目描述</label>
-            <input class="create-input" id="radio-source" name="source" type="text" autocomplete="off" placeholder="粘贴网易云歌单链接或描述你想听的节目..." aria-describedby="form-message">
+            <label for="radio-source" hidden>网易云歌单链接或关键词</label>
+            <input class="create-input" id="radio-source" name="source" type="text" autocomplete="off" placeholder="粘贴网易云歌单链接或输入歌单关键词..." aria-describedby="form-message">
             <button class="create-button" type="submit">创建节目</button>
           </form>
-          <p class="form-message" id="form-message" aria-live="polite">支持网易云歌单链接 · 描述创建模式即将开放</p>
+          <p class="form-message" id="form-message" aria-live="polite">数据来源于网易云音乐,仅供学习</p>
         </div>
       </section>
 
@@ -783,9 +946,10 @@
           <div class="show-grid" id="show-grid">
             <!-- Dynamic show cards will be inserted here -->
           </div>
-          <p id="empty-state" style="color: var(--muted); font-size: 0.82rem; padding: 2rem 0; text-align: center;">
-            暂无节目，创建你的第一个电台节目吧
-          </p>
+          <div class="empty-state" id="empty-state">
+            <strong>当前频段尚未保存节目</strong>
+            <span>Tune a playlist above to begin transmission</span>
+          </div>
         </div>
       </section>
     </main>
@@ -845,19 +1009,21 @@
         return b.name.localeCompare(a.name);
       });
 
-      for (const item of sorted) {
-        const card = createShowCard(item);
+      for (const [index, item] of sorted.entries()) {
+        const card = createShowCard(item, index);
         showGrid.appendChild(card);
       }
     }
 
-    function createShowCard(item) {
+    function createShowCard(item, index) {
       const card = document.createElement('article');
-      card.className = 'show-card';
       card.dataset.name = item.name;
 
       const isComplete = item.progress === 100;
       const isActive = activeConnections.has(item.name);
+      const stateClass = isComplete ? 'show-card--ready' : isActive ? 'show-card--generating' : 'show-card--draft';
+      const signalLabel = isComplete ? 'Ready' : isActive ? 'Transmitting' : `Standby ${item.progress}%`;
+      card.className = `show-card ${stateClass}`;
       const coverUrl = item.playlistImageUrl || 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=84';
 
       let statusHtml = '';
@@ -884,6 +1050,10 @@
       }
 
       card.innerHTML = `
+        <div class="show-card-head">
+          <span class="show-episode">VF / EP.${item.name}</span>
+          <span class="show-signal">${signalLabel}</span>
+        </div>
         <a class="show-link" href="${isComplete ? `/show.html?name=${encodeURIComponent(item.name)}` : '#'}"
            aria-label="${isComplete ? `打开节目：${item.title}` : '节目生成中'}"
            ${!isComplete ? 'onclick="return false"' : ''}>
@@ -970,6 +1140,10 @@
       if (existingRow) existingRow.remove();
 
       if (state === 'generating') {
+        card.classList.remove('show-card--draft');
+        card.classList.add('show-card--generating');
+        const signalEl = card.querySelector('.show-signal');
+        if (signalEl) signalEl.textContent = 'Transmitting';
         const numberEl = card.querySelector('.show-number');
         if (numberEl) {
           numberEl.textContent = '...';
@@ -990,6 +1164,10 @@
 
       if (stageEl) stageEl.textContent = '';
       if (errorEl) errorEl.textContent = message;
+      card.classList.remove('show-card--generating');
+      card.classList.add('show-card--draft');
+      const signalEl = card.querySelector('.show-signal');
+      if (signalEl) signalEl.textContent = 'Signal Lost';
 
       // Remove existing bottom row and add retry row
       const existingRow = showCopy.querySelector('.show-bottom-row');
@@ -1061,9 +1239,6 @@
         await loadWorkspaces();
         startGeneration(body.name);
       } catch (error) {
-        if (error.code === 'NO_SEARCH_RESULTS') {
-          alert(`未搜到"${source}"相关的专辑`);
-        }
         formMessage.dataset.state = 'error';
         formMessage.textContent = error.message || '创建失败，请重试。';
       } finally {
@@ -1076,11 +1251,11 @@
       createForm.classList.remove('is-invalid');
       createInput.removeAttribute('aria-invalid');
       formMessage.dataset.state = '';
-      formMessage.textContent = '支持网易云歌单链接 · 描述创建模式即将开放';
+      formMessage.textContent = '数据来源于网易云音乐,仅供学习';
     });
 
     // Test connection
-    testStatus.addEventListener('click', async () => {
+    async function runSystemCheck() {
       const statusLabel = testStatus.querySelector('.status-label');
       statusLabel.textContent = 'Testing...';
 
@@ -1095,9 +1270,16 @@
       }
 
       setTimeout(() => {
-        statusLabel.textContent = 'Test Connection';
+        statusLabel.textContent = 'System Check';
         testStatus.style.color = '';
       }, 3000);
+    }
+
+    testStatus.addEventListener('click', runSystemCheck);
+    testStatus.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      runSystemCheck();
     });
 
     // Clean up connections when page unloads

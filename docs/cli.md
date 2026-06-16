@@ -77,7 +77,7 @@ vibefm create midnight-radio '适合深夜独处的电台' --playlist-url 'https
 `.vibefm` 下创建文件夹，用于保存该节目的所有数据和产物。
 
 参数说明：
-- `prompt`：后续 AI 生成使用的节目描述。不指定歌单参数时必填；指定歌单参数时可选（默认为空字符串）
+- `prompt`：后续 AI 生成使用的节目描述。不指定歌单参数时必填；指定歌单参数时可选（默认为空字符串）。若未指定 prompt 且无歌单参数，会从环境变量 `DEFAULT_PROMPT` 读取默认值
 - `--playlist-url <url>`：网易云歌单 URL，导入歌单到节目空间
 - `--playlist-query <query>`：歌单搜索关键词，自动搜索并导入第一个匹配的歌单
 - `--playlist-url` 和 `--playlist-query` 互斥，不能同时指定
@@ -179,11 +179,12 @@ vibefm show <节目空间命名>
 ### 4. 生成节目策划
 
 ```bash
-vibefm generate plan <节目空间命名> --count 10
+vibefm generate plan <节目空间命名> [--count 10]
 ```
 
 要求节目空间内已存在有效的 `info.json` 和 `playlist.json`。`--count`
-必须是正整数，且不能超过歌单歌曲数量。
+可选，默认值从环境变量 `DEFAULT_TRACK_COUNT` 读取（默认 5）。
+`count` 必须是正整数，且不能超过歌单歌曲数量。
 
 等待 AI 返回期间，CLI 会将 `AI 正在生成节目策划，请稍候...` 输出到
 `stderr`。最终成功或失败结果仍单独以 JSON 输出到 `stdout`，便于脚本解析。
@@ -302,7 +303,7 @@ prompts/script.user.md
 
 `script.user.md` 必须保留 `{{prompt}}`、`{{tracks_info}}`
 和 `{{dsl_markdown}}` 占位符。
-AI 直接生成 `docs/dsl.md` 定义的 RadioScript Markdown DSL，包括开场、歌曲
+AI 直接生成 `prompts/dsl.md` 定义的 RadioScript Markdown DSL，包括开场、歌曲
 介绍与歌曲间串词、歌手信息表达、歌词主题解读、故事表达、结尾和音频事件。
 
 core 会校验 frontmatter、`# Opening`、`# Ending`、`<host>` 闭合和非空内容，
@@ -532,7 +533,7 @@ plan -> detail -> script -> events -> audio -> speech -> render
 
 参数与单阶段命令保持一致：
 
-- `--count <number>`：策划选择的歌曲数量。仅当 `plan` 尚未完成、需要实际执行时必填
+- `--count <number>`：策划选择的歌曲数量。仅当 `plan` 尚未完成、需要实际执行时可选，未指定时使用环境变量 `DEFAULT_TRACK_COUNT` 的值（默认 5）
 - `--commentLimit <number>`：每首歌获取的评论数量，默认 10
 - `--quality <level>`：歌曲音质，默认 `standard`
 - `--voice <voice>`：主播预设音色，默认 `冰糖`

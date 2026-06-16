@@ -21,6 +21,7 @@ const MANIFEST_FILE = "manifest.json";
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 2;
 const BITRATE = "192k";
+const DEFAULT_HOST_GAP = 0.5;
 const ASSET_EXTENSIONS = [
   ".wav",
   ".mp3",
@@ -77,6 +78,8 @@ export interface GenerateProgramRenderOptions {
   probeDuration?: DurationProbe;
   now?: () => Date;
   speechRate?: number;
+  hostGap?: number;
+  hostVolume?: number;
 }
 
 interface FileSegment {
@@ -197,7 +200,9 @@ export async function generateProgramRender(
   const probeDuration = options.probeDuration ?? defaultProbeDuration;
   const assetsDirectory =
     options.assetsDirectory ?? path.join(baseDirectory, "assets");
-  const speechRate = options.speechRate ?? 1.1;
+  const speechRate = options.speechRate ?? 1.2;
+  const hostGap = options.hostGap ?? DEFAULT_HOST_GAP;
+  const hostVolume = options.hostVolume ?? 1.5;
   const { segments, bgmSpans, subtitleCues } = await buildTimeline(
     events,
     speechMedia,
@@ -207,6 +212,8 @@ export async function generateProgramRender(
     assetsDirectory,
     (filePath) => probeDuration(filePath, options.ffprobePath ?? "ffprobe"),
     speechRate,
+    hostGap,
+    hostVolume,
   );
   const graph = buildFilterGraph(segments, bgmSpans);
 
@@ -309,6 +316,8 @@ async function buildTimeline(
   assetsDirectory: string,
   probeDuration: (filePath: string) => Promise<number>,
   speechRate: number = 1.0,
+  hostGap: number = DEFAULT_HOST_GAP,
+  hostVolume: number = 1.0,
 ): Promise<{
   segments: TimelineSegment[];
   bgmSpans: BgmSpan[];
@@ -320,6 +329,7 @@ async function buildTimeline(
   let duration = 0;
   let pendingCrossfade: number | undefined;
   let activeBgm: ActiveBgm | undefined;
+  let lastAppendedWasHost = false;
 
   const appendSegment = (
     segment: TimelineSegment,
@@ -370,6 +380,7 @@ async function buildTimeline(
     switch (event.type) {
       case "pause":
         appendSegment({ type: "silence", duration: event.duration });
+        lastAppendedWasHost = false;
         break;
       case "crossfade":
         if (pendingCrossfade !== undefined || segments.length === 0) {
@@ -378,9 +389,13 @@ async function buildTimeline(
           );
         }
         pendingCrossfade = event.duration;
+        lastAppendedWasHost = false;
         break;
       case "audio": {
         if (event.role === "host") {
+          if (lastAppendedWasHost && hostGap > 0 && pendingCrossfade === undefined) {
+            appendSegment({ type: "silence", duration: hostGap });
+          }
           const filePath = requiredMedia(speechMedia, event.id, "speech");
           assertWorkspaceSource(event.source, workspaceDirectory, filePath);
           const hostDuration = await probeValidDuration(filePath, probeDuration);
@@ -389,7 +404,9 @@ async function buildTimeline(
             filePath,
             duration: hostDuration / speechRate,
             speechRate,
+            volume: hostVolume !== 1.0 ? hostVolume : undefined,
           }, event.text);
+          lastAppendedWasHost = true;
           if (activeBgm !== undefined && event.duckTo !== undefined) {
             activeBgm.ducks.push({
               startAt: duration - (hostDuration / speechRate) - activeBgm.startAt,
@@ -464,6 +481,7 @@ async function buildTimeline(
         }), isMain
           ? `播放《${requiredTrackTitle(event.source, trackTitles)}》中...`
           : undefined);
+        lastAppendedWasHost = false;
         break;
       }
     }
@@ -814,8 +832,11 @@ async function readMediaManifest(
       );
     }
     if (status !== completeStatus) {
+      const hint = status === "failed"
+        ? ` Run generate audio again to retry.`
+        : "";
       throw invalidDependency(
-        `${dependencyName} media ${id} is incomplete with status ${status}.`,
+        `${dependencyName} media ${id} is incomplete with status ${status}.${hint}`,
       );
     }
     const resolvedPath = path.resolve(directory, filePath);

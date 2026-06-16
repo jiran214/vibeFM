@@ -64,9 +64,8 @@ async function createFixture() {
       "DSL={{dsl_markdown}}",
     ].join("\n"),
   );
-  await mkdir(path.join(baseDirectory, "docs"));
   await writeFile(
-    path.join(baseDirectory, "docs", "dsl.md"),
+    path.join(baseDirectory, "prompts", "dsl.md"),
     "# RadioScript DSL\nUse <host> and <audio /> tags.",
   );
   return { baseDirectory, workspace };
@@ -79,8 +78,6 @@ function validAiResponse() {
     "voice_design_prompt: Warm, restrained, and slow",
     "---",
     "",
-    "# Opening",
-    "",
     "<host>",
     "Welcome to After Midnight.",
     "</host>",
@@ -88,16 +85,12 @@ function validAiResponse() {
     '<pause duration="2s" />',
     '<audio source="/audio/2.wav" role="main" volume="100%" fade_in="2s" fade_out="3s" />',
     "",
-    "# Block 1",
-    "",
     '<host voice_design_prompt="Reflective and conversational">',
     "From reflection, we move toward a quieter resolution.",
     "</host>",
     "",
     '<crossfade duration="2s" />',
     '<audio source="/audio/1.wav" role="main" volume="100%" fade_in="2s" fade_out="3s" />',
-    "",
-    "# Ending",
     "",
     '<host voice_design_prompt="Gentle, calm, and unhurried">',
     "Thank you for spending this quiet hour with us.",
@@ -128,7 +121,6 @@ test("generateProgramScript writes the validated RadioScript DSL to script.md", 
   assert.match(userPrompt, /Use <host> and <audio \/> tags/u);
 
   const scriptText = await readFile(result.path, "utf8");
-  assert.match(scriptText, /^# Opening$/mu);
   assert.match(scriptText, /Welcome to After Midnight\./u);
   assert.match(scriptText, /<audio source="\/audio\/2\.wav" role="main"/u);
   assert.match(scriptText, /<audio source="\/audio\/1\.wav" role="main"/u);

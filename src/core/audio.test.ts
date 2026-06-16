@@ -205,79 +205,74 @@ test("generateAudio downloads audio file to audio/<id>", async () => {
   assert.deepEqual(fileContent, audioContent);
 });
 
-test("generateAudio skips tracks with no playback URL", async () => {
+test("generateAudio rejects when track has no playback URL", async () => {
   const baseDirectory = await createTempDirectory();
   const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
   await writePlan(workspace.path, validPlan());
 
-  const result = await generateAudio("demo", baseDirectory, {
-    cookie: "test=cookie",
-    fetch: async () =>
-      Response.json({
-        code: 200,
-        data: [
-          {
-            id: 5257138,
-            url: null,
-            br: 0,
-            size: 0,
-            type: null,
-            level: "standard",
-            encodeType: "aac",
-            time: 0,
-            code: 401,
-          },
-        ],
-      }),
-  });
-
-  assert.equal(result.downloadedCount, 0);
-  assert.equal(result.warnings.length, 1);
-  assert.ok(result.warnings[0].includes("5257138"));
-});
-
-// --- Slice 5: silent WAV placeholder for failed tracks ---
-
-test("generateAudio creates 1-second silent WAV placeholder for failed download", async () => {
-  const baseDirectory = await createTempDirectory();
-  const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
-  await writePlan(workspace.path, validPlan());
-
-  const result = await generateAudio("demo", baseDirectory, {
-    cookie: "test=cookie",
-    fetch: async (input) => {
-      if (String(input).includes("weapi/song/enhance/player/url")) {
-        return Response.json({
+  await assert.rejects(
+    generateAudio("demo", baseDirectory, {
+      cookie: "test=cookie",
+      fetch: async () =>
+        Response.json({
           code: 200,
           data: [
             {
               id: 5257138,
-              url: "https://example.com/song.m4a",
-              br: 128000,
-              size: 100,
-              type: "m4a",
+              url: null,
+              br: 0,
+              size: 0,
+              type: null,
               level: "standard",
               encodeType: "aac",
-              time: 240000,
-              code: 200,
+              time: 0,
+              code: 401,
             },
           ],
-        });
-      }
-      return new Response(null, { status: 403 });
-    },
-  });
+        }),
+    }),
+    (error: unknown) =>
+      error instanceof AudioDownloadError &&
+      error.code === "PLAYBACK_REQUEST_FAILED",
+  );
+});
 
-  assert.equal(result.downloadedCount, 0);
-  assert.equal(result.placeholderCount, 1);
-  assert.equal(result.warnings.length, 1);
+// --- Slice 5: abort on failed download ---
 
-  const wavPath = path.join(workspace.path, "audio", "5257138.wav");
-  const wav = await readFile(wavPath);
-  // WAV header: 44 bytes, then 1 second of silence at 44100 Hz, 16-bit, mono
-  assert.ok(wav.length === 44 + 44100 * 2, "should be 1-second 16-bit mono WAV");
-  assert.equal(wav.toString("ascii", 0, 4), "RIFF");
-  assert.equal(wav.toString("ascii", 8, 12), "WAVE");
+test("generateAudio rejects when download fails", async () => {
+  const baseDirectory = await createTempDirectory();
+  const workspace = await createWorkspace("demo", "test prompt", baseDirectory);
+  await writePlan(workspace.path, validPlan());
+
+  await assert.rejects(
+    generateAudio("demo", baseDirectory, {
+      cookie: "test=cookie",
+      fetch: async (input) => {
+        if (String(input).includes("weapi/song/enhance/player/url")) {
+          return Response.json({
+            code: 200,
+            data: [
+              {
+                id: 5257138,
+                url: "https://example.com/song.m4a",
+                br: 128000,
+                size: 100,
+                type: "m4a",
+                level: "standard",
+                encodeType: "aac",
+                time: 240000,
+                code: 200,
+              },
+            ],
+          });
+        }
+        return new Response(null, { status: 403 });
+      },
+    }),
+    (error: unknown) =>
+      error instanceof AudioDownloadError &&
+      error.code === "PLAYBACK_REQUEST_FAILED",
+  );
 });
 
 // --- Slice 6: manifest.json ---
@@ -289,45 +284,52 @@ test("generateAudio writes manifest.json with track order and status", async () 
   plan.track_ids = [5257138, 5257139];
   await writePlan(workspace.path, plan);
 
-  const result = await generateAudio("demo", baseDirectory, {
-    quality: "exhigh",
-    cookie: "test=cookie",
-    fetch: async (input) => {
-      const url = String(input);
-      if (url.includes("weapi/song/enhance/player/url")) {
-        return Response.json({
-          code: 200,
-          data: [
-            {
-              id: 5257138,
-              url: "https://example.com/song1.m4a",
-              br: 320000,
-              size: 5000,
-              type: "m4a",
-              level: "exhigh",
-              encodeType: "aac",
-              time: 240000,
-              code: 200,
-            },
-            {
-              id: 5257139,
-              url: null,
-              br: 0,
-              size: 0,
-              type: null,
-              level: "exhigh",
-              encodeType: "aac",
-              time: 0,
-              code: 401,
-            },
-          ],
-        });
-      }
-      return new Response(Buffer.from("audio-data"), { status: 200 });
-    },
-  });
+  await assert.rejects(
+    generateAudio("demo", baseDirectory, {
+      quality: "exhigh",
+      cookie: "test=cookie",
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.includes("weapi/song/enhance/player/url")) {
+          return Response.json({
+            code: 200,
+            data: [
+              {
+                id: 5257138,
+                url: "https://example.com/song1.m4a",
+                br: 320000,
+                size: 5000,
+                type: "m4a",
+                level: "exhigh",
+                encodeType: "aac",
+                time: 240000,
+                code: 200,
+              },
+              {
+                id: 5257139,
+                url: null,
+                br: 0,
+                size: 0,
+                type: null,
+                level: "exhigh",
+                encodeType: "aac",
+                time: 0,
+                code: 401,
+              },
+            ],
+          });
+        }
+        return new Response(Buffer.from("audio-data"), { status: 200 });
+      },
+    }),
+    (error: unknown) =>
+      error instanceof AudioDownloadError &&
+      error.code === "PLAYBACK_REQUEST_FAILED",
+  );
 
-  const manifest = JSON.parse(await readFile(result.manifest, "utf8"));
+  // Verify manifest was still written with progress
+  const manifestPath = path.join(workspace.path, "audio", "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   assert.equal(manifest.version, 1);
   assert.equal(manifest.quality, "exhigh");
   assert.equal(manifest.tracks.length, 2);
@@ -341,7 +343,7 @@ test("generateAudio writes manifest.json with track order and status", async () 
 
   assert.equal(manifest.tracks[1].order, 2);
   assert.equal(manifest.tracks[1].id, 5257139);
-  assert.equal(manifest.tracks[1].status, "placeholder");
+  assert.equal(manifest.tracks[1].status, "failed");
   assert.equal(manifest.tracks[1].filePath, "5257139.wav");
   assert.ok(manifest.tracks[1].error);
 });
