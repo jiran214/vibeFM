@@ -179,11 +179,3 @@ This project is for educational and learning purposes only. Some features rely o
 ### License
 
 [GPL](LICENSE)
-
----
-
-<div align="center">
-
-**[↑ Back to top](#vibefm)**
-
-</div>
