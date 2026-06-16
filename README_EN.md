@@ -17,13 +17,13 @@ English | [中文](README_CN.md)
 <table>
   <tr>
     <td align="center" width="33%"><img src="assets/首页.png" width="100%" alt="Homepage" /></td>
-    <td align="center" width="33%"><img src="assets/节目列表.png" width="100%" alt="Show List" /></td>
-    <td align="center" width="33%"><img src="assets/播放页.png" width="100%" alt="Player" /></td>
+    <td align="center" width="33%"><img src="assets/播放1.png" width="100%" alt="Player" /></td>
+    <td align="center" width="33%"><img src="assets/播放2.png" width="100%" alt="Subtitles" /></td>
   </tr>
   <tr>
     <td align="center"><em>Homepage</em></td>
-    <td align="center"><em>Show List</em></td>
-    <td align="center"><em>Player · Synced Subtitles</em></td>
+    <td align="center"><em>Player</em></td>
+    <td align="center"><em>Synced Subtitles</em></td>
   </tr>
 </table>
 
