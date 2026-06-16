@@ -21,7 +21,7 @@ const MANIFEST_FILE = "manifest.json";
 const SAMPLE_RATE = 48_000;
 const CHANNELS = 2;
 const BITRATE = "192k";
-const DEFAULT_HOST_GAP = 0.5;
+const DEFAULT_HOST_GAP = 0.3;
 const ASSET_EXTENSIONS = [
   ".wav",
   ".mp3",
@@ -200,9 +200,9 @@ export async function generateProgramRender(
   const probeDuration = options.probeDuration ?? defaultProbeDuration;
   const assetsDirectory =
     options.assetsDirectory ?? path.join(baseDirectory, "assets");
-  const speechRate = options.speechRate ?? 1.2;
+  const speechRate = options.speechRate ?? 1.3;
   const hostGap = options.hostGap ?? DEFAULT_HOST_GAP;
-  const hostVolume = options.hostVolume ?? 1.5;
+  const hostVolume = options.hostVolume ?? 4;
   const { segments, bgmSpans, subtitleCues } = await buildTimeline(
     events,
     speechMedia,
