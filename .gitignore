@@ -10,6 +10,8 @@ coverage/
 .cookie
 prompts/plan.system.md
 .playwright-cli/
-assets/
+assets/*.mp3
+assets/*.wav
+assets/*.m4a
 logs/
 docs/
